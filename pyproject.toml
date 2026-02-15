@@ -1,0 +1,11 @@
+# pyproject.toml
+# ==============
+# This file tells Python how to install the project.
+#
+# The distribution is named `codelens`; the Python import remains `graph_rag`.
+# [tool.setuptools.packages.find]
+# Ship the `graph_rag` package and its sub-packages; ignore everything else.
+include = ["graph_rag*"]
+
+[tool.ruff]
+line-length = 100

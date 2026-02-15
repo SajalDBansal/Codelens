@@ -1,0 +1,17 @@
+.env
+venv/
+__pycache__/
+# Python packaging output
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.venv-*/
+test-results/
+
+# Local graph and runtime files
+.codelens/
+*.lbug
+*.lbug.*
