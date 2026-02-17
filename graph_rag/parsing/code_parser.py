@@ -47,6 +47,24 @@ from .tree_utils import node_text as _text
 _IDENTIFIER_RE = re.compile('[A-Za-z_][A-Za-z0-9_]*')
 _HERITAGE_KEYWORDS = frozenset({'extends', 'implements', 'with', 'public', 'private', 'protected', 'virtual', 'abstract', 'override', 'open', 'final', 'sealed'})
 
+def _last_identifier(text: str) -> Optional[str]:
+    """
+    Reduce a callee expression down to the bare name being called.
+
+        "check"                 -> "check"
+        "self.db.save"          -> "save"
+        "std::fs::read_to_string" -> "read_to_string"
+        "obj.items[0].run"      -> "run"
+
+    We take the LAST identifier because that is the actual method/function
+    name; everything before it is the path used to reach it. This is a
+    simplification: two different classes can both have a `save` method, and
+    this cannot tell them apart. That ambiguity is handled later, in
+    storage/, by refusing to guess when a name is not unique.
+    """
+    matches = _IDENTIFIER_RE.findall(text)
+    return matches[-1] if matches else None
+
 def _split_qualified(raw_name: str) -> tuple[list[str], str]:
     """
     Split a name a grammar handed us fully qualified into (scope, bare name).
@@ -70,6 +88,90 @@ def _split_qualified(raw_name: str) -> tuple[list[str], str]:
         if len(parts) > 1:
             return (parts[:-1], parts[-1])
     return ([], raw_name)
+
+def _constant_name(node, source: bytes) -> Optional[str]:
+    """
+    The name of a module-level constant or variable declaration.
+
+    Grammars disagree about where it lives, so we try, in order: a "name"
+    field, a "left" field (assignments), a `declarator` chain (Java/C#
+    fields), and finally the first identifier-ish descendant (Kotlin and
+    Scala expose no field at all).
+    """
+    for field_name in ('name', 'left'):
+        candidate = node.child_by_field_name(field_name)
+        if candidate is not None:
+            text = _text(candidate, source).strip()
+            if text and ',' not in text:
+                names = _IDENTIFIER_RE.findall(text)
+                if names:
+                    return names[-1] if len(names) == 1 else names[0]
+    declarator = node.child_by_field_name('declarator')
+    depth = 0
+    while declarator is not None and depth < 5:
+        if declarator.type in ('identifier', 'field_identifier', 'variable_declarator'):
+            names = _IDENTIFIER_RE.findall(_text(declarator, source))
+            if names:
+                return names[0]
+        declarator = declarator.child_by_field_name('declarator')
+        depth += 1
+
+    def first_identifier(current, depth_left: int) -> Optional[str]:
+        if depth_left < 0:
+            return None
+        for child in current.named_children:
+            if child.type == 'variable_declarator':
+                found = first_identifier(child, depth_left)
+                if found:
+                    return found
+        for child in current.named_children:
+            if child.type in ('identifier', 'simple_identifier', 'constant', 'variable_name', 'name', 'field_identifier'):
+                text = _text(child, source).strip().lstrip('$')
+                if text:
+                    return text
+            if child.type in ('variable_declaration', 'variable_list', 'init_declarator', 'value_binding_pattern', 'pattern'):
+                found = first_identifier(child, depth_left - 1)
+                if found:
+                    return found
+        return None
+    return first_identifier(node, 3)
+
+def _has_required_modifiers(node, source: bytes, config: LanguageConfig) -> bool:
+    """
+    Does this declaration carry every modifier its language needs to count
+    as a constant?
+
+    Java and C# use ONE node type for both a class constant and an ordinary
+    instance field, so without this check `private final OrderRepository repo;`
+    became a "constant" named `repo`. That is wrong twice over: it is state,
+    not a constant, and the name it adds collides with every other `repo` in
+    the graph, making real references to any of them ambiguous.
+
+    We look only at the declaration head - the text before the first `=` -
+    so a keyword appearing inside an initialiser string cannot be mistaken
+    for a modifier.
+    """
+    if not config.constant_required_modifiers:
+        return True
+    head = _text(node, source).split('=', 1)[0]
+    words = set(_IDENTIFIER_RE.findall(head))
+    return all((modifier in words for modifier in config.constant_required_modifiers))
+
+def _is_function_valued(node) -> bool:
+    """
+    Is this declaration really a function in disguise?
+
+        const handleClick = () => { ... }
+
+    is a `variable_declarator`, which is also our JS/TS constant node type.
+    It already becomes a function entity via the arrow_function inside it,
+    so emitting a constant for it as well would duplicate every arrow
+    function in the codebase.
+    """
+    value = node.child_by_field_name('value')
+    if value is None:
+        return False
+    return value.type in ('arrow_function', 'function_expression', 'function', 'generator_function', 'class')
 _BODY_REQUIRED_TYPES = frozenset({'struct_specifier', 'union_specifier', 'enum_specifier', 'class_specifier'})
 
 def _is_real_definition(node) -> bool:
@@ -114,7 +216,45 @@ def _node_name(node, source: bytes, config: LanguageConfig) -> Optional[str]:
         if child.type in ('identifier', 'simple_identifier', 'type_identifier', 'constant', 'word'):
             return _text(child, source)
     return None
+
+def _receiver_identifier(text: str) -> Optional[str]:
+    """
+    The thing a call was made ON, as opposed to the thing being called.
+
+        "login"            -> None          (a plain function call)
+        "auth.login"       -> "auth"
+        "self.db.save"     -> "db"
+        "TaxCalculator.applyTax" -> "TaxCalculator"
+
+    `_last_identifier` deliberately throws this away, because the NAME is
+    what has to be matched against the graph. But the receiver is the piece
+    that says WHICH of several same-named definitions was meant, and dropping
+    it is why a subclass overriding a parent method makes both unlinkable.
+    """
+    matches = _IDENTIFIER_RE.findall(text)
+    return matches[-2] if len(matches) >= 2 else None
 _CALL_RECEIVER_FIELDS = ('object', 'receiver', 'instance', 'function')
+
+def _call_receiver(call_node, callee_text: str, called_name: str, source: bytes) -> Optional[str]:
+    """
+    The object a call was made on, however the grammar chose to express it.
+
+    Tries the callee expression first, since that is where most languages put
+    it, then the call node's own receiver-ish fields. A field that just gives
+    the called name back is rejected - that means the grammar fields the
+    callee there and there is no receiver to find.
+    """
+    receiver = _receiver_identifier(callee_text)
+    if receiver is not None:
+        return receiver
+    for field in _CALL_RECEIVER_FIELDS:
+        node = call_node.child_by_field_name(field)
+        if node is None:
+            continue
+        candidate = _last_identifier(_text(node, source))
+        if candidate and candidate != called_name:
+            return candidate
+    return None
 _PARAMETER_FIELDS = ('parameters', 'parameter_list', 'formal_parameters')
 _PARAM_NAME_FIELDS = ('name', 'pattern', 'declarator')
 _IMPLICIT_RECEIVERS = frozenset({'self', 'this', 'cls', '_'})
@@ -229,6 +369,53 @@ def prefer_by_scope(candidate_ids: list[str], source_id: str) -> str | None:
         return siblings[0]
     return None
 
+def _collect_call_sites(node, source: bytes, config: LanguageConfig, stop_types: set[str]) -> list[tuple[str, Optional[str], Optional[int]]]:
+    """
+    Find every function call inside `node` as (name, receiver), but STOP at
+    nested definitions.
+
+    The receiver is the expression the call was made ON - `auth` in
+    `auth.login()` - and it is None for a plain function call. It is what
+    later tells `AuthService.login` apart from `AdminAuthService.login`.
+
+    Why stop? Consider:
+
+        def outer():
+            helper_a()
+            def inner():
+                helper_b()
+
+    `helper_b` is called by `inner`, not by `outer`. If we walked the whole
+    subtree blindly we would wrongly say outer calls helper_b. So when we
+    meet a nested function/class we do not descend into it - that node will
+    be visited separately as its own entity and collect its own calls.
+    """
+    found: list[tuple[str, Optional[str], Optional[int]]] = []
+
+    def walk(current, is_root: bool) -> None:
+        if not is_root and current.type in stop_types:
+            return
+        if current.type in config.call_types:
+            field_name = config.call_function_fields.get(current.type, config.call_function_field)
+            callee = current.child_by_field_name(field_name)
+            if callee is None and current.named_child_count > 0:
+                callee = current.named_children[0]
+            if callee is not None:
+                callee_text = _text(callee, source)
+                name = _last_identifier(callee_text)
+                if name:
+                    arguments = current.child_by_field_name('arguments')
+                    argument_count = arguments.named_child_count if arguments is not None else None
+                    found.append((name, _call_receiver(current, callee_text, name, source), argument_count))
+        for child in current.children:
+            walk(child, is_root=False)
+    walk(node, is_root=True)
+    return found
+
+def _collect_call_names(node, source: bytes, config: LanguageConfig, stop_types: set[str]) -> list[str]:
+    """Just the names, for the callers that do not care who they were called on."""
+    return [name for name, _, _ in _collect_call_sites(node, source, config, stop_types)]
+
 def _walk_tree(root, source: bytes, config: LanguageConfig, relative_path: str) -> tuple[list[CodeEntity], list[Relationship], list[tuple[str, str]], list[tuple[str, str]], list[tuple[str, str]], list[tuple[str, str]]]:
     """
     Walk the whole syntax tree once and collect everything we need.
@@ -291,6 +478,16 @@ def _walk_tree(root, source: bytes, config: LanguageConfig, relative_path: str) 
                          node of their own.
         """
         is_definition = node.type in definition_types and _is_real_definition(node)
+        if not is_definition and node.type in config.constant_types:
+            if not inside_function and (not _is_function_valued(node)) and _has_required_modifiers(node, source, config):
+                const_name = _constant_name(node, source)
+                if const_name:
+                    const_id = unique_id(f"{relative_path}::{'.'.join(scope + [const_name])}", node.type)
+                    code = _text(node, source)
+                    entities.append(CodeEntity(id=const_id, kind='constant', name=const_name, file_path=relative_path, language=config.name, start_line=node.start_point[0] + 1, end_line=inclusive_end_line(node), code=code, docstring=_extract_docstring(node, source, config), content_hash=_hash_text(code)))
+                    if parent_id is not None:
+                        relationships.append(Relationship(source_id=parent_id, target_id=const_id, kind='CONTAINS'))
+                    return
         if is_definition:
             raw_name = _node_name(node, source, config)
             if raw_name is None:
@@ -344,6 +541,145 @@ def _walk_tree(root, source: bytes, config: LanguageConfig, relative_path: str) 
     visit(root, scope=[], parent_id=None, inside_class=False, inside_function=False)
     return (entities, relationships, pending_calls, pending_extends, pending_owners, pending_types)
 
+def _outermost(entities: list[CodeEntity]) -> list[CodeEntity]:
+    """
+    The entities that are not nested inside any other entity in the list.
+
+    A class and its methods all appear in `entities`; only the class is
+    "outermost", and that is what a reader of an outline wants to see.
+    """
+    real = [e for e in entities if e.kind != 'module']
+    return [e for e in sorted(real, key=lambda e: e.start_line) if not any((other is not e and other.start_line <= e.start_line and (other.end_line >= e.end_line) for other in real))]
+
+def _file_outline(relative_path: str, entities: list[CodeEntity]) -> str:
+    """
+    A short "what is in this file" summary, used for files whose every line is
+    already inside some definition.
+
+    Built from names and kinds only - never from bodies - so it stays stable
+    under any edit that does not add or remove a top-level definition, and so
+    it never triggers a re-embed of this node on an unrelated change.
+    """
+    outermost = _outermost(entities)
+    if not outermost:
+        return ''
+    lines = [f'{relative_path} - file outline']
+    lines.extend((f'{entity.kind} {entity.name}' for entity in outermost))
+    return '\n'.join(lines)
+
+def _build_module_entity(root, source: bytes, config: LanguageConfig, relative_path: str, entities: list[CodeEntity]) -> Optional[CodeEntity]:
+    """
+    Capture the code that is NOT inside any function or class.
+
+    WHY THIS EXISTS
+    ---------------
+    Entities are functions and classes, so everything at the top level of a
+    file - imports, constants, configuration dictionaries, route tables,
+    module-level wiring - belonged to no node at all and was therefore
+    completely invisible to retrieval. Measured on a demo project, that was
+    a third of all code lines missing:
+
+        ROUTES = {"/login": "handle_login", ...}     <- unreachable
+        MAX_CART_ITEMS = 50                          <- unreachable
+        auth_service = AuthService(repository)       <- unreachable
+
+    Ask "where are the routes defined?" and the honest answer was that the
+    system could not see them.
+
+    So each file also gets ONE `module` entity holding its top-level lines.
+    Nested definition bodies are left out (they have their own nodes) and
+    replaced with a short marker, so the module node stays a readable
+    summary of the file's shape rather than a duplicate of the whole file.
+    """
+    covered: set[int] = set()
+    for entity in entities:
+        covered.update(range(entity.start_line, entity.end_line + 1))
+    lines = source.decode('utf-8', errors='replace').splitlines()
+    kept: list[str] = []
+    first_line = None
+    last_line = None
+    skip_start: Optional[int] = None
+
+    def outermost_names(first: int, last: int) -> list[str]:
+        """The top-level definitions occupying lines `first`..`last`."""
+        inside = [e for e in entities if e.kind != 'module' and e.start_line >= first and (e.end_line <= last)]
+        return [e.name for e in sorted(inside, key=lambda e: e.start_line) if not any((other is not e and other.start_line <= e.start_line and (other.end_line >= e.end_line) for other in inside))]
+
+    def close_skip(previous_line: int) -> None:
+        """Replace a run of already-covered lines with a marker."""
+        if skip_start is None:
+            return
+        names = outermost_names(skip_start, previous_line)
+        label = ', '.join(names) if names else 'definitions'
+        kept.append(f'    ... ({label} defined above)')
+    for number, text in enumerate(lines, start=1):
+        if number in covered:
+            if skip_start is None:
+                skip_start = number
+            continue
+        if skip_start is not None:
+            close_skip(number - 1)
+            skip_start = None
+        if text.strip():
+            if first_line is None:
+                first_line = number
+            last_line = number
+        kept.append(text)
+    if skip_start is not None:
+        close_skip(len(lines))
+    text = '\n'.join(kept).strip()
+    meaningful = [line for line in text.splitlines() if line.strip() and (not line.strip().startswith('...'))]
+    if not meaningful:
+        text = _file_outline(relative_path, entities)
+        if not text:
+            return None
+        first_line = 1
+        last_line = max(len(lines), 1)
+    module_name = relative_path.rsplit('/', 1)[-1]
+    return CodeEntity(id=f'{relative_path}::<module>', kind='module', name=module_name, file_path=relative_path, language=config.name, start_line=first_line or 1, end_line=last_line or first_line or 1, code=text, docstring=None, content_hash=_hash_text(text))
+
+def _collect_top_level_calls(root, source: bytes, config: LanguageConfig) -> list[str]:
+    """
+    Calls made at the top level of a file, outside any function or class.
+
+    These are how a module wires itself together:
+
+        auth_service = AuthService(repository)
+
+    Attributing that call to the module node connects the file's setup code
+    to the classes it instantiates, which is exactly the link someone asking
+    "where is AuthService constructed?" needs.
+    """
+    boundary_types = set(config.function_types) | set(config.class_types) | set(config.constant_types)
+    return _collect_call_names(root, source, config, boundary_types)
+
+def _collect_imports(root, source: bytes, config: LanguageConfig) -> list[str]:
+    """
+    Grab the raw text of every import statement at the top of the file.
+
+    We keep them as plain text rather than resolving them to files here,
+    because turning "from .db import GraphStore" into an actual path is
+    language-specific guesswork. storage/ does a best-effort match later.
+    """
+    imports: list[str] = []
+
+    def walk(node) -> None:
+        if node.type in config.import_types:
+            imports.append(_text(node, source).strip())
+            return
+        if config.import_call_names and node.type in config.call_types:
+            field_name = config.call_function_fields.get(node.type, config.call_function_field)
+            callee = node.child_by_field_name(field_name)
+            if callee is not None:
+                name = _last_identifier(_text(callee, source))
+                if name in config.import_call_names:
+                    imports.append(_text(node, source).strip())
+                    return
+        for child in node.children:
+            walk(child)
+    walk(root)
+    return imports
+
 def parse_file(absolute_path: Path, relative_path: str) -> Optional[ParsedFile]:
     """
     Read one source file and return everything we learned from it.
@@ -374,7 +710,15 @@ def parse_file(absolute_path: Path, relative_path: str) -> Optional[ParsedFile]:
         if len(owners) == 1:
             relationships.append(Relationship(source_id=owners[0], target_id=member_id, kind='CONTAINS'))
             owned_ids.add(member_id)
-    module_entity = None
+    module_entity = _build_module_entity(tree.root_node, source, config, relative_path, entities)
+    if module_entity is not None:
+        contained = {r.target_id for r in relationships if r.kind == 'CONTAINS'}
+        for entity in entities:
+            if entity.id not in contained:
+                relationships.append(Relationship(source_id=module_entity.id, target_id=entity.id, kind='CONTAINS'))
+        entities.append(module_entity)
+        for called_name in _collect_top_level_calls(tree.root_node, source, config):
+            pending_calls.append((module_entity.id, called_name))
     name_to_ids: dict[str, list[str]] = {}
     for entity in entities:
         if entity.kind in ('constant', 'module'):
@@ -409,5 +753,5 @@ def parse_file(absolute_path: Path, relative_path: str) -> Optional[ParsedFile]:
         entity.unresolved_types = by_kind['USES_TYPE'].get(entity.id, [])
         entity.is_recursive = entity.id in recursive_ids
     interface_refs: list[tuple[str, str, str]] = []
-    parsed = ParsedFile(file_path=relative_path, language=language, content_hash=_hash_text(source.decode('utf-8', errors='replace')), entities=entities, relationships=relationships, imports=[], unresolved_references=unresolved, interface_refs=interface_refs)
+    parsed = ParsedFile(file_path=relative_path, language=language, content_hash=_hash_text(source.decode('utf-8', errors='replace')), entities=entities, relationships=relationships, imports=_collect_imports(tree.root_node, source, config), unresolved_references=unresolved, interface_refs=interface_refs)
     return parsed

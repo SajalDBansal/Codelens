@@ -30,6 +30,46 @@ def parsed_python(tmp_path):
     path.write_text(PY_SOURCE, encoding='utf-8')
     return parse_file(path, 'svc.py')
 
+def test_entity_kinds(parsed_python):
+    """
+    A function in a class is a method; a free function is a function; a
+    module-level assignment is a constant; and the leftover top-level code
+    becomes one "module" node named after the file.
+    """
+    kinds = {e.name: e.kind for e in parsed_python.entities}
+    assert kinds == {'CONSTANT': 'constant', 'Service': 'class', 'run': 'method', 'helper': 'function', 'svc.py': 'module'}
+
+def test_module_level_constants_are_their_own_entities(parsed_python):
+    """
+    A constant needs a NAME of its own to be findable.
+
+    It used to exist only as a line of text inside the module node, so it had
+    no name, nothing could link to it, and "what is CONSTANT set to?" could
+    only ever match the whole-file blob. Giving it a node makes it
+    retrievable, citable, and a valid target for a documentation MENTIONS
+    edge.
+    """
+    constant = next((e for e in parsed_python.entities if e.kind == 'constant'))
+    assert constant.id == 'svc.py::CONSTANT'
+    assert constant.name == 'CONSTANT'
+    assert 'CONSTANT = 3' in constant.code
+    assert constant.start_line == 2
+
+def test_module_entity_captures_leftover_top_level_code(parsed_python):
+    """
+    Whatever belongs to no other entity still needs a home, or it is in NO
+    node at all and cannot be retrieved.
+
+    Real entities are elided from it - they have their own nodes - and each
+    elided run is labelled with the lines it stands for, so a citation into
+    the module node can still be followed back to the file.
+    """
+    module = next((e for e in parsed_python.entities if e.kind == 'module'))
+    assert module.id == 'svc.py::<module>'
+    assert 'Module docstring.' in module.code
+    assert 'return value * CONSTANT' not in module.code
+    assert 'defined above' in module.code
+
 def test_entity_ids_are_qualified(parsed_python):
     ids = {e.id for e in parsed_python.entities}
     assert 'svc.py::Service.run' in ids

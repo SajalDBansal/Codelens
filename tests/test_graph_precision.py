@@ -1,0 +1,49 @@
+"""
+Guards on the things that quietly cost the graph its precision.
+
+Each test here pins a defect found by auditing a real indexing run. They all
+share a shape: nothing raised, nothing logged, and the graph looked healthy -
+it was just wrong, or needlessly expensive, in a way only a measurement showed.
+"""
+import json
+from graph_rag import config
+from graph_rag.parsing.code_parser import parse_file
+MODULE_BEFORE = 'import os\n\ndef alpha():\n    return 1\n\ndef beta():\n    return 2\n'
+MODULE_AFTER = 'import os\n\ndef alpha():\n    x = 1\n    y = x\n    return y\n\ndef beta():\n    return 2\n'
+
+def _module_entity(tmp_path, name, source):
+    path = tmp_path / name
+    path.write_text(source, encoding='utf-8')
+    parsed = parse_file(path, name)
+    return next((e for e in parsed.entities if e.kind == 'module'))
+
+def test_module_hash_survives_an_edit_inside_a_function(tmp_path):
+    """
+    Editing one function's body must not force the module node to re-embed.
+
+    The elision markers used to name line ranges - "(lines 3-4 defined
+    above)" - so every edit that changed a line count anywhere in the file
+    rewrote this node's text and changed its content hash. That is a paid
+    embedding call on every single edit, and it defeats the whole point of
+    hashing blocks separately.
+    """
+    before = _module_entity(tmp_path, 'a.py', MODULE_BEFORE)
+    after = _module_entity(tmp_path, 'b.py', MODULE_AFTER)
+    assert before.code == after.code
+    assert before.content_hash == after.content_hash
+
+def test_module_outline_says_what_was_left_out(tmp_path):
+    """
+    The marker still has to be followable - it names the definitions it
+    stands in for, which is both stable and more useful than a line range.
+    """
+    module = _module_entity(tmp_path, 'a.py', MODULE_BEFORE)
+    assert 'import os' in module.code
+    assert 'return 1' not in module.code
+    assert 'alpha' in module.code and 'beta' in module.code
+    assert 'defined above' in module.code
+JAVA_WITH_CONSTRUCTOR = 'public class OrderService {\n    public static final int MAX_ITEMS = 50;\n    private final OrderRepository repo;\n\n    public OrderService(OrderRepository repo) {\n        this.repo = repo;\n    }\n\n    public String place(String user) {\n        return repo.save(user);\n    }\n}\n'
+RUST_IMPL = 'pub struct LineItem { pub cents: u64 }\n\npub trait Priced { fn total(&self) -> u64; }\n\nimpl Priced for LineItem {\n    fn total(&self) -> u64 { self.cents }\n}\n'
+
+def _candidate(entity_id, path, language='python', kind='function'):
+    return {'id': entity_id, 'filePath': path, 'language': language, 'kind': kind}
