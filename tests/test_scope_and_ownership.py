@@ -16,7 +16,49 @@ at all in the graph. Neither failure raised anything, which is why they are
 pinned here.
 """
 import pytest
-from graph_rag.parsing import parse_file
+from graph_rag.parsing import parse_file, prefer_by_scope
+
+def test_a_caller_prefers_the_helper_it_contains():
+    """
+    The case that cost this project 8 of its 21 ambiguous references.
+
+    Six functions across the repository each define a local helper called
+    `walk`. When `collect_folder_hashes` calls `walk` it can only mean its
+    own, but the unique-match rule saw six candidates and gave up.
+    """
+    candidates = ['merkle.py::collect_folder_hashes.walk', 'merkle.py::collect_file_hashes.walk', 'merkle.py::diff_against_stored.walk', 'parser.py::_collect_calls.walk']
+    chosen = prefer_by_scope(candidates, 'merkle.py::collect_folder_hashes')
+    assert chosen == 'merkle.py::collect_folder_hashes.walk'
+
+def test_a_sibling_in_the_same_scope_wins():
+    """Two methods of one class refer to each other, not to a distant twin."""
+    candidates = ['a.py::Service.save', 'b.py::Other.save']
+    assert prefer_by_scope(candidates, 'a.py::Service.load') == 'a.py::Service.save'
+
+def test_recursion_is_reported_as_the_caller_itself():
+    """
+    A self-call is a FACT about the code, not a missing edge.
+
+    Returning the source id is how the rule says so; the caller records it as
+    a property rather than creating a self-loop that every traversal would
+    then have to step around.
+    """
+    candidates = ['m.py::build.recurse']
+    assert prefer_by_scope(candidates, 'm.py::build.recurse') == 'm.py::build.recurse'
+
+def test_scope_stays_silent_when_it_has_nothing_to_say():
+    """
+    Two unrelated files, neither containing the caller. Scope must return
+    None so the later rules (imports, uniqueness) get their turn, rather than
+    inventing a preference it cannot justify.
+    """
+    candidates = ['x.py::save', 'y.py::save']
+    assert prefer_by_scope(candidates, 'z.py::caller') is None
+
+def test_scope_never_crosses_a_file():
+    """Containment is a within-file fact; a same-named nest elsewhere is not it."""
+    candidates = ['other.py::caller.walk']
+    assert prefer_by_scope(candidates, 'mine.py::caller') is None
 GO_SOURCE = 'package main\n\ntype Engine struct {\n\trules []int\n}\n\n// Apply runs every rule.\nfunc (e *Engine) Apply(base int) int {\n\treturn helper(base)\n}\n\nfunc helper(x int) int { return x }\n'
 
 @pytest.fixture

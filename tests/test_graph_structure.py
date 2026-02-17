@@ -93,6 +93,18 @@ def test_line_numbers_are_1_based_and_within_the_file(parsed_python):
 def test_class_contains_its_method(parsed_python):
     edges = {(r.source_id, r.target_id, r.kind) for r in parsed_python.relationships}
     assert ('svc.py::Service', 'svc.py::Service.run', 'CONTAINS') in edges
+
+def test_same_file_call_is_resolved_immediately(parsed_python):
+    """`run` calls `helper`, and both are in this file, so no guessing needed."""
+    edges = {(r.source_id, r.target_id, r.kind) for r in parsed_python.relationships}
+    assert ('svc.py::Service.run', 'svc.py::helper', 'CALLS') in edges
+
+def test_edges_only_reference_entities_from_this_file(parsed_python):
+    """No edge may dangle off to an id that does not exist."""
+    ids = {e.id for e in parsed_python.entities}
+    for rel in parsed_python.relationships:
+        assert rel.source_id in ids
+        assert rel.target_id in ids
 MD_SOURCE = '# Title\n\nIntro prose about the project.\n\n## Setup\n\nHow to set it up, calling `helper` along the way.\n\n### Install\n\nInstallation detail.\n\n## Usage\n\nHow to use it.\n'
 
 @pytest.fixture

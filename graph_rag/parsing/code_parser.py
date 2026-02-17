@@ -416,6 +416,56 @@ def _collect_call_names(node, source: bytes, config: LanguageConfig, stop_types:
     """Just the names, for the callers that do not care who they were called on."""
     return [name for name, _, _ in _collect_call_sites(node, source, config, stop_types)]
 
+def _collect_parent_class_names(node, source: bytes, config: LanguageConfig) -> list[str]:
+    """
+    Find the classes a class inherits from, for EXTENDS edges.
+
+    Python:  class Admin(User):          -> field "superclasses"
+    Java:    class Admin extends User    -> field "superclass"
+    TS:      class Admin extends User    -> a `class_heritage` child node
+
+    Everything found is reduced to bare identifiers, so `List[User]` in a
+    generic base class yields both "List" and "User"; the unresolvable ones
+    simply never match anything in the graph and are dropped later.
+    """
+    names: list[str] = []
+    seen: set[str] = set()
+
+    def add_from(heritage) -> None:
+        """
+        Collect the type names inside a heritage node.
+
+        We read the node's NAMED CHILDREN rather than running a regex over
+        its text. Java's `superclass` node covers the words "extends B", so
+        a regex over the text produced the keyword `extends` as though it
+        were a parent class - a name that matches nothing, counted as a real
+        missed edge in the report, and duplicated because the same node was
+        visited by both branches below.
+        """
+        candidates = [child for child in heritage.named_children if child.type not in ('comment',)]
+        if not candidates:
+            for word in _IDENTIFIER_RE.findall(_text(heritage, source)):
+                if word not in _HERITAGE_KEYWORDS and word not in seen:
+                    seen.add(word)
+                    names.append(word)
+            return
+        for child in candidates:
+            for word in _IDENTIFIER_RE.findall(_text(child, source)):
+                if word not in _HERITAGE_KEYWORDS and word not in seen:
+                    seen.add(word)
+                    names.append(word)
+    visited: set[int] = set()
+    if config.extends_field:
+        heritage = node.child_by_field_name(config.extends_field)
+        if heritage is not None:
+            visited.add(heritage.id)
+            add_from(heritage)
+    for child in node.children:
+        if child.type in ('class_heritage', 'extends_clause', 'superclass', 'super_interfaces', 'base_list') and child.id not in visited:
+            visited.add(child.id)
+            add_from(child)
+    return names
+
 def _walk_tree(root, source: bytes, config: LanguageConfig, relative_path: str) -> tuple[list[CodeEntity], list[Relationship], list[tuple[str, str]], list[tuple[str, str]], list[tuple[str, str]], list[tuple[str, str]]]:
     """
     Walk the whole syntax tree once and collect everything we need.
@@ -487,6 +537,8 @@ def _walk_tree(root, source: bytes, config: LanguageConfig, relative_path: str) 
                     entities.append(CodeEntity(id=const_id, kind='constant', name=const_name, file_path=relative_path, language=config.name, start_line=node.start_point[0] + 1, end_line=inclusive_end_line(node), code=code, docstring=_extract_docstring(node, source, config), content_hash=_hash_text(code)))
                     if parent_id is not None:
                         relationships.append(Relationship(source_id=parent_id, target_id=const_id, kind='CONTAINS'))
+                    for called_name in _collect_call_names(node, source, config, boundary_types):
+                        pending_calls.append((const_id, called_name))
                     return
         if is_definition:
             raw_name = _node_name(node, source, config)
@@ -524,12 +576,20 @@ def _walk_tree(root, source: bytes, config: LanguageConfig, relative_path: str) 
             conflicting: set[str] = set()
             arity_hints: dict[str, int] = {}
             conflicting_arity: set[str] = set()
+            for called_name, receiver, argument_count in _collect_call_sites(node, source, config, call_stop_types):
+                pending_calls.append((entity_id, called_name))
             for name in conflicting:
                 owner_hints.pop(name, None)
             for name in conflicting_arity:
                 arity_hints.pop(name, None)
             entities[-1].call_owner_hints = owner_hints
             entities[-1].call_arity_hints = arity_hints
+            if is_class:
+                for parent_name in _collect_parent_class_names(node, source, config):
+                    pending_extends.append((entity_id, parent_name))
+                trait_name = None
+                if trait_name:
+                    pending_extends.append((entity_id, trait_name))
             field_type_names = {value for value in own_fields.values() if value not in _PRIMITIVE_TYPE_NAMES}
             if owner_name:
                 pending_owners.append((entity_id, owner_name))
@@ -733,6 +793,20 @@ def parse_file(absolute_path: Path, relative_path: str) -> Optional[ParsedFile]:
         if len(candidates) == 1:
             return candidates[0]
         return prefer_by_scope(candidates, source_id)
+    for source_id, called_name in pending_calls:
+        target = _resolve_in_file(source_id, called_name)
+        if target == source_id:
+            recursive_ids.add(source_id)
+        elif target is not None:
+            relationships.append(Relationship(source_id=source_id, target_id=target, kind='CALLS'))
+        else:
+            unresolved.append((source_id, called_name, 'CALLS'))
+    for source_id, parent_name in pending_extends:
+        target = _resolve_in_file(source_id, parent_name)
+        if target is not None and target != source_id:
+            relationships.append(Relationship(source_id=source_id, target_id=target, kind='EXTENDS'))
+        else:
+            unresolved.append((source_id, parent_name, 'EXTENDS'))
     types_only = {name: [e.id for e in entities if e.kind == 'class' and e.name == name] for _, name in pending_types}
     seen_type_refs: set[tuple[str, str]] = set()
     for source_id, type_name in pending_types:
