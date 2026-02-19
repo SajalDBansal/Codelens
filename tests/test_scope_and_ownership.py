@@ -66,6 +66,28 @@ def parsed_go(tmp_path):
     path = tmp_path / 'engine.go'
     path.write_text(GO_SOURCE, encoding='utf-8')
     return parse_file(path, 'engine.go')
+
+def test_a_go_method_is_a_method_not_a_function(parsed_go):
+    """
+    Go states membership in a receiver instead of nesting, so `Apply` used to
+    come out as a free function and `Engine` had no methods in the graph at
+    all. "What methods does Engine have?" was simply not answerable.
+    """
+    apply = next((e for e in parsed_go.entities if e.name == 'Apply'))
+    assert apply.kind == 'method'
+    assert apply.owner_name == 'Engine'
+    assert apply.id == 'engine.go::Engine.Apply'
+
+def test_a_go_method_hangs_off_its_type(parsed_go):
+    """The edge itself, not just the label."""
+    edges = {(r.source_id, r.target_id) for r in parsed_go.relationships if r.kind == 'CONTAINS'}
+    assert ('engine.go::Engine', 'engine.go::Engine.Apply') in edges
+
+def test_a_receiverless_go_function_stays_a_function(parsed_go):
+    """The rule must not swallow ordinary package-level functions."""
+    helper = next((e for e in parsed_go.entities if e.name == 'helper'))
+    assert helper.kind == 'function'
+    assert helper.owner_name is None
 RUST_SOURCE = 'pub struct LineItem {\n    pub cents: u64,\n}\n\npub trait Priced {\n    fn total(&self) -> u64;\n}\n\nimpl Priced for LineItem {\n    fn total(&self) -> u64 {\n        self.cents\n    }\n}\n'
 
 @pytest.fixture
@@ -73,6 +95,24 @@ def parsed_rust(tmp_path):
     path = tmp_path / 'lib.rs'
     path.write_text(RUST_SOURCE, encoding='utf-8')
     return parse_file(path, 'lib.rs')
+
+def test_a_rust_impl_is_joined_to_its_struct(parsed_rust):
+    """
+    `struct LineItem` and `impl LineItem` are two nodes sharing a name, and
+    nothing connected them - so the struct was an isolated node whose methods
+    lived somewhere the graph could not reach from it.
+    """
+    edges = {(r.source_id, r.target_id) for r in parsed_rust.relationships if r.kind == 'CONTAINS'}
+    assert ('lib.rs::LineItem', 'lib.rs::LineItem~impl_item') in edges
+
+def test_a_rust_trait_implementation_is_an_edge(parsed_rust):
+    """
+    `impl Priced for LineItem` says LineItem implements Priced. The trait was
+    parsed and then left with nothing pointing at it, so "what implements
+    Priced?" had no answer.
+    """
+    extends = {(r.source_id, r.target_id) for r in parsed_rust.relationships if r.kind == 'EXTENDS'}
+    assert ('lib.rs::LineItem~impl_item', 'lib.rs::Priced') in extends
 
 def test_a_file_of_pure_definitions_still_gets_a_module_node(tmp_path):
     """

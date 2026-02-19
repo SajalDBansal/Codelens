@@ -217,6 +217,27 @@ def _node_name(node, source: bytes, config: LanguageConfig) -> Optional[str]:
             return _text(child, source)
     return None
 
+def _owner_type_name(node, source: bytes, config: LanguageConfig) -> Optional[str]:
+    """
+    The type this definition belongs to, when the language names it rather
+    than nesting it.
+
+        Go     func (e *Engine) Apply(...)   -> "Engine"
+        Rust   impl LineItem { ... }         -> "LineItem"
+        Rust   impl Priced for LineItem      -> "LineItem"
+
+    Returns None for languages and node types that express membership by
+    nesting, which is every other case in this file.
+    """
+    if node.type in config.impl_types:
+        return _node_name(node, source, config)
+    if not config.receiver_field:
+        return None
+    receiver = node.child_by_field_name(config.receiver_field)
+    if receiver is None:
+        return None
+    return _last_identifier(_text(receiver, source))
+
 def _receiver_identifier(text: str) -> Optional[str]:
     """
     The thing a call was made ON, as opposed to the thing being called.
@@ -376,6 +397,21 @@ def _arity(node, source: bytes) -> tuple[Optional[int], bool]:
             continue
         count += 1
     return (count, flexible)
+
+def _impl_trait_name(node, source: bytes, config: LanguageConfig) -> Optional[str]:
+    """
+    The trait an `impl` block implements, if any.
+
+    `impl Priced for LineItem` says LineItem implements Priced. That is an
+    inheritance edge, and dropping it left every Rust trait as an isolated
+    node with nothing pointing at it.
+    """
+    if not config.impl_trait_field or node.type not in config.impl_types:
+        return None
+    trait = node.child_by_field_name(config.impl_trait_field)
+    if trait is None:
+        return None
+    return _last_identifier(_text(trait, source))
 
 def _extract_docstring(node, source: bytes, config: LanguageConfig) -> Optional[str]:
     """
@@ -662,7 +698,7 @@ def _walk_tree(root, source: bytes, config: LanguageConfig, relative_path: str) 
                     visit(child, scope, parent_id, inside_class, inside_function, field_types)
                 return
             qualifier, name = _split_qualified(raw_name)
-            owner_name = None
+            owner_name = _owner_type_name(node, source, config)
             owner_scope = [owner_name] if owner_name and (not scope) and (not qualifier) and (node.type not in config.impl_types) else []
             qualified_name = '.'.join(scope + qualifier + owner_scope + [name])
             entity_id = unique_id(f'{relative_path}::{qualified_name}', node.type)
@@ -716,7 +752,7 @@ def _walk_tree(root, source: bytes, config: LanguageConfig, relative_path: str) 
             if is_class:
                 for parent_name in _collect_parent_class_names(node, source, config):
                     pending_extends.append((entity_id, parent_name))
-                trait_name = None
+                trait_name = _impl_trait_name(node, source, config)
                 if trait_name:
                     pending_extends.append((entity_id, trait_name))
             field_type_names = {value for value in own_fields.values() if value not in _PRIMITIVE_TYPE_NAMES}

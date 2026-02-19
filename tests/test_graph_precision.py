@@ -45,5 +45,22 @@ def test_module_outline_says_what_was_left_out(tmp_path):
 JAVA_WITH_CONSTRUCTOR = 'public class OrderService {\n    public static final int MAX_ITEMS = 50;\n    private final OrderRepository repo;\n\n    public OrderService(OrderRepository repo) {\n        this.repo = repo;\n    }\n\n    public String place(String user) {\n        return repo.save(user);\n    }\n}\n'
 RUST_IMPL = 'pub struct LineItem { pub cents: u64 }\n\npub trait Priced { fn total(&self) -> u64; }\n\nimpl Priced for LineItem {\n    fn total(&self) -> u64 { self.cents }\n}\n'
 
+def test_rust_impl_is_named_for_its_type_and_does_not_shadow_it(tmp_path):
+    """
+    `impl Priced for LineItem` is about LineItem: its method belongs to
+    LineItem, not to the trait. But it must not then compete with
+    `struct LineItem` as a call target either, so it gets its own kind.
+    """
+    path = tmp_path / 'p.rs'
+    path.write_text(RUST_IMPL, encoding='utf-8')
+    parsed = parse_file(path, 'p.rs')
+    by_id = {e.id: e for e in parsed.entities}
+    assert 'p.rs::LineItem.total' in by_id, f"the impl's method is filed wrongly: {sorted(by_id)}"
+    named_line_item = [e for e in parsed.entities if e.name == 'LineItem']
+    kinds = sorted((e.kind for e in named_line_item))
+    assert kinds == ['class', 'impl'], kinds
+    callable_kinds = [k for k in kinds if k not in ('constant', 'module', 'impl')]
+    assert len(callable_kinds) == 1
+
 def _candidate(entity_id, path, language='python', kind='function'):
     return {'id': entity_id, 'filePath': path, 'language': language, 'kind': kind}
