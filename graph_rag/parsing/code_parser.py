@@ -363,6 +363,87 @@ def _bindings_in(container, source: bytes) -> dict[str, str]:
 _RETURN_TYPE_FIELDS = ('return_type', 'result', 'type')
 _PRIMITIVE_TYPE_NAMES = frozenset({'int', 'str', 'string', 'bool', 'boolean', 'float', 'double', 'long', 'short', 'byte', 'char', 'void', 'any', 'unknown', 'never', 'object', 'number', 'bigint', 'symbol', 'null', 'None', 'nil', 'undefined', 'list', 'dict', 'set', 'tuple', 'map', 'array', 'Array', 'List', 'Dict', 'Map', 'Set', 'Optional', 'Union', 'Promise', 'Awaitable', 'error', 'Error', 'Exception', 'String', 'Integer', 'Boolean', 'Object', 'T', 'self', 'Self', 'this', 'var', 'val', 'let', 'const', 'func', 'fn'})
 
+def _type_names_in(node, source: bytes) -> set[str]:
+    """
+    Every identifier inside a TYPE expression, primitives dropped.
+
+    All of them rather than just the last, because a type is often a
+    container: `list[LineItem]` genuinely references LineItem, and
+    `Dict[str, Order]` references Order. Taking only the final identifier
+    would work for those two by luck and fail on `Result<Order, ApiError>`,
+    which references both.
+
+    Anything that is not a type in the graph simply never resolves and is
+    dropped later, so casting the net wide here costs nothing.
+    """
+    if node is None:
+        return set()
+    return {name for name in _IDENTIFIER_RE.findall(_text(node, source)) if name not in _PRIMITIVE_TYPE_NAMES}
+
+def _signature_type_names(node, source: bytes, config: LanguageConfig) -> set[str]:
+    """
+    The types named in one definition's signature - its parameters and its
+    return type.
+
+    WHY THESE DESERVE AN EDGE OF THEIR OWN
+    --------------------------------------
+    The graph had CALLS, CONTAINS and EXTENDS, and nothing else - so a type
+    was only ever connected to the code using it if that code happened to
+    CALL it. Measured on the demo repository, the TypeScript `Order` and
+    `Session` interfaces had degree 1: their file's CONTAINS edge and nothing
+    more, despite `Order` being the declared parameter type of `checkout` and
+    of the `Cart` component that renders it.
+
+    That is a real retrieval hole. Asked what `checkout` accepts or returns,
+    retrieval could find the function and had no way to reach the shape of
+    the data it works on - so the model either omitted it or guessed at the
+    fields.
+    """
+    found: set[str] = set()
+    container = _parameter_container(node)
+    if container is not None:
+        for parameter in container.named_children:
+            found |= _type_names_in(parameter.child_by_field_name('type'), source)
+    for field in _RETURN_TYPE_FIELDS:
+        return_type = node.child_by_field_name(field)
+        if return_type is not None:
+            found |= _type_names_in(return_type, source)
+            break
+    return found
+
+def _field_bindings(node, source: bytes, config: LanguageConfig) -> dict[str, str]:
+    """
+    {field name: declared type} for a class's own fields.
+
+    THE GAP THIS CLOSES
+    -------------------
+    The type environment reads parameters, receivers and `self`. It did not
+    read FIELDS, and a field is how object-oriented code most often holds a
+    collaborator:
+
+        public class InvoiceService {
+            private final TaxCalculator taxCalculator;
+            ...
+            taxCalculator.applyTax(subtotal)      <- receiver is a field
+        }
+
+    Without this the receiver `taxCalculator` had no type, so the call got no
+    hint - which is exactly why the Java service produced fewer hints than
+    the Python one on the demo repository.
+
+    Definitions are skipped explicitly. A method node also has a "type" field
+    - its RETURN type - so walking the body without filtering would bind
+    every method's name to whatever it returns.
+    """
+    body = node.child_by_field_name('body') or node
+    definition_types = set(config.function_types) | set(config.class_types) | set(config.constructor_types)
+    fields: dict[str, str] = {}
+    for child in body.named_children:
+        if child.type in definition_types:
+            continue
+        fields.update(_bindings_in_node(child, source))
+    return fields
+
 def _arity(node, source: bytes) -> tuple[Optional[int], bool]:
     """
     (declared parameter count, whether that count is flexible).
@@ -710,7 +791,7 @@ def _walk_tree(root, source: bytes, config: LanguageConfig, relative_path: str) 
             else:
                 kind = 'function'
             code = _text(node, source)
-            own_fields = {} if is_class else {}
+            own_fields = _field_bindings(node, source, config) if is_class else {}
             type_env = dict(field_types or {})
             type_env.update(_type_environment(node, source, config))
             enclosing_type = owner_name or (scope[-1] if inside_class and scope else None)
@@ -756,6 +837,9 @@ def _walk_tree(root, source: bytes, config: LanguageConfig, relative_path: str) 
                 if trait_name:
                     pending_extends.append((entity_id, trait_name))
             field_type_names = {value for value in own_fields.values() if value not in _PRIMITIVE_TYPE_NAMES}
+            for type_name in _signature_type_names(node, source, config) | field_type_names:
+                if type_name != name:
+                    pending_types.append((entity_id, type_name))
             if owner_name:
                 pending_owners.append((entity_id, owner_name))
             for child in node.children:
