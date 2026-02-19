@@ -259,8 +259,123 @@ _PARAMETER_FIELDS = ('parameters', 'parameter_list', 'formal_parameters')
 _PARAM_NAME_FIELDS = ('name', 'pattern', 'declarator')
 _IMPLICIT_RECEIVERS = frozenset({'self', 'this', 'cls', '_'})
 _FLEXIBLE_ARITY_MARKERS = ('=', '*', '...', '?', '{', '[')
+
+def _parameter_container(node):
+    """The node holding this definition's parameter list, if it has one."""
+    for field in _PARAMETER_FIELDS:
+        container = node.child_by_field_name(field)
+        if container is not None:
+            return container
+    return None
+
+def _type_environment(node, source: bytes, config: LanguageConfig) -> dict[str, str]:
+    """
+    {parameter name: declared type name} for one definition.
+
+        def handle_login(request, auth: AuthService)  -> {"auth": "AuthService"}
+        public Invoice make(TaxCalculator calc)       -> {"calc": "TaxCalculator"}
+        func run(c *Consumer)                         -> {"c": "Consumer"}
+
+    WHY THIS IS WORTH THE TROUBLE
+    -----------------------------
+    It is the evidence that settles the commonest ambiguity in
+    object-oriented code. When `AuthService.login` and `AdminAuthService.login`
+    both answer to the name `login`, the old rule refused to link either and
+    the whole auth module dropped out of the graph. The calling code was never
+    ambiguous about it - it says `auth: AuthService` right there in the
+    signature. This reads that.
+
+    Written against tree-sitter FIELDS rather than per-language node types,
+    with positional fallbacks, so it works on every grammar in the registry
+    without eighteen special cases. Where it cannot work out a type it simply
+    returns nothing for that parameter, and resolution falls back to the
+    strict rule - so a grammar this does not understand loses nothing.
+    """
+    environment: dict[str, str] = {}
+    containers = []
+    parameters = _parameter_container(node)
+    if parameters is not None:
+        containers.append(parameters)
+    if config.receiver_field:
+        receiver = node.child_by_field_name(config.receiver_field)
+        if receiver is not None:
+            containers.append(receiver)
+    for container in containers:
+        environment.update(_bindings_in(container, source))
+    return environment
+
+def _bindings_in_node(declaration, source: bytes) -> dict[str, str]:
+    """
+    {name: type} read off ONE declaration - a parameter or a class field.
+
+    The two are the same shape in every grammar here: something that fields
+    its type as "type" and its name as "name", "pattern" or "declarator".
+    Returning a dict rather than a pair keeps the "found nothing" case free
+    of None handling at both call sites.
+    """
+    type_node = declaration.child_by_field_name('type')
+    if type_node is None:
+        return {}
+    type_name = _last_identifier(_text(type_node, source))
+    if not type_name:
+        return {}
+    name_node = None
+    for field in _PARAM_NAME_FIELDS:
+        name_node = declaration.child_by_field_name(field)
+        if name_node is not None:
+            break
+    if name_node is not None:
+        declared_name = _last_identifier(_text(name_node, source))
+    else:
+        identifiers = _IDENTIFIER_RE.findall(_text(declaration, source))
+        declared_name = identifiers[0] if identifiers else None
+    if declared_name and declared_name != type_name:
+        return {declared_name: type_name}
+    return {}
+
+def _bindings_in(container, source: bytes) -> dict[str, str]:
+    """{name: type} for every parameter-shaped child of `container`."""
+    environment: dict[str, str] = {}
+    for parameter in container.named_children:
+        environment.update(_bindings_in_node(parameter, source))
+    return environment
 _RETURN_TYPE_FIELDS = ('return_type', 'result', 'type')
 _PRIMITIVE_TYPE_NAMES = frozenset({'int', 'str', 'string', 'bool', 'boolean', 'float', 'double', 'long', 'short', 'byte', 'char', 'void', 'any', 'unknown', 'never', 'object', 'number', 'bigint', 'symbol', 'null', 'None', 'nil', 'undefined', 'list', 'dict', 'set', 'tuple', 'map', 'array', 'Array', 'List', 'Dict', 'Map', 'Set', 'Optional', 'Union', 'Promise', 'Awaitable', 'error', 'Error', 'Exception', 'String', 'Integer', 'Boolean', 'Object', 'T', 'self', 'Self', 'this', 'var', 'val', 'let', 'const', 'func', 'fn'})
+
+def _arity(node, source: bytes) -> tuple[Optional[int], bool]:
+    """
+    (declared parameter count, whether that count is flexible).
+
+    The count excludes `self` / `this`, so it is what a CALLER passes rather
+    than what the definition writes down.
+
+    THE SECOND VALUE IS THE IMPORTANT ONE
+    -------------------------------------
+    Arity is the most dangerous of the three disambiguation signals, because
+    a signature's declared count is often not the number of arguments a legal
+    call carries: default values, varargs, optional parameters and
+    destructuring all break the equality. Using it naively does not merely
+    fail to help - it can eliminate the RIGHT candidate and leave exactly one
+    wrong one, which turns a missing edge into a confident wrong edge. That
+    is the one outcome this project's rules exist to prevent.
+
+    So the flexible flag is detected with a deliberately broad, cheap text
+    check, and any signature that trips it opts out of arity matching
+    entirely. The check erring towards "flexible" is the safe direction: the
+    worst case is that arity contributes nothing.
+    """
+    container = _parameter_container(node)
+    if container is None:
+        return (None, False)
+    text = _text(container, source)
+    flexible = any((marker in text for marker in _FLEXIBLE_ARITY_MARKERS))
+    count = 0
+    for parameter in container.named_children:
+        identifiers = _IDENTIFIER_RE.findall(_text(parameter, source))
+        if identifiers and identifiers[0] in _IMPLICIT_RECEIVERS:
+            continue
+        count += 1
+    return (count, flexible)
 
 def _extract_docstring(node, source: bytes, config: LanguageConfig) -> Optional[str]:
     """
@@ -561,12 +676,12 @@ def _walk_tree(root, source: bytes, config: LanguageConfig, relative_path: str) 
             code = _text(node, source)
             own_fields = {} if is_class else {}
             type_env = dict(field_types or {})
-            type_env.update({})
+            type_env.update(_type_environment(node, source, config))
             enclosing_type = owner_name or (scope[-1] if inside_class and scope else None)
             if enclosing_type:
                 for implicit in ('self', 'this'):
                     type_env.setdefault(implicit, enclosing_type)
-            param_count, flexible_arity = (None, False)
+            param_count, flexible_arity = _arity(node, source)
             entities.append(CodeEntity(id=entity_id, kind=kind, name=name, file_path=relative_path, language=config.name, start_line=node.start_point[0] + 1, end_line=inclusive_end_line(node), code=code, docstring=_extract_docstring(node, source, config), content_hash=_hash_text(code), owner_name=owner_name, param_count=param_count, flexible_arity=flexible_arity))
             if parent_id is not None:
                 relationships.append(Relationship(source_id=parent_id, target_id=entity_id, kind='CONTAINS'))
@@ -578,6 +693,20 @@ def _walk_tree(root, source: bytes, config: LanguageConfig, relative_path: str) 
             conflicting_arity: set[str] = set()
             for called_name, receiver, argument_count in _collect_call_sites(node, source, config, call_stop_types):
                 pending_calls.append((entity_id, called_name))
+                if argument_count is not None:
+                    if called_name in arity_hints and arity_hints[called_name] != argument_count:
+                        conflicting_arity.add(called_name)
+                    arity_hints[called_name] = argument_count
+                if not receiver:
+                    continue
+                hint = type_env.get(receiver)
+                if hint is None and receiver[:1].isupper():
+                    hint = receiver
+                if hint is None or hint == called_name:
+                    continue
+                if called_name in owner_hints and owner_hints[called_name] != hint:
+                    conflicting.add(called_name)
+                owner_hints[called_name] = hint
             for name in conflicting:
                 owner_hints.pop(name, None)
             for name in conflicting_arity:
