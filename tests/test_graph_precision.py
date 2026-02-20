@@ -43,6 +43,32 @@ def test_module_outline_says_what_was_left_out(tmp_path):
     assert 'alpha' in module.code and 'beta' in module.code
     assert 'defined above' in module.code
 JAVA_WITH_CONSTRUCTOR = 'public class OrderService {\n    public static final int MAX_ITEMS = 50;\n    private final OrderRepository repo;\n\n    public OrderService(OrderRepository repo) {\n        this.repo = repo;\n    }\n\n    public String place(String user) {\n        return repo.save(user);\n    }\n}\n'
+
+def test_java_constructor_does_not_take_its_class_name(tmp_path):
+    """
+    A constructor named after its class put two `OrderService` entities in
+    one file, so every `new OrderService(...)` was judged ambiguous and got
+    no edge - permanently, on every run.
+    """
+    path = tmp_path / 'OrderService.java'
+    path.write_text(JAVA_WITH_CONSTRUCTOR, encoding='utf-8')
+    parsed = parse_file(path, 'OrderService.java')
+    named_order_service = [e for e in parsed.entities if e.name == 'OrderService']
+    assert len(named_order_service) == 1, f"more than one entity answers to 'OrderService': {[e.id for e in named_order_service]}"
+    assert named_order_service[0].kind == 'class'
+    assert any((e.name == '<init>' for e in parsed.entities))
+
+def test_java_instance_field_is_not_a_constant(tmp_path):
+    """
+    `private final OrderRepository repo;` is state, not a constant. Emitting
+    it as one mislabelled it and added a colliding `repo` to the graph.
+    """
+    path = tmp_path / 'OrderService.java'
+    path.write_text(JAVA_WITH_CONSTRUCTOR, encoding='utf-8')
+    parsed = parse_file(path, 'OrderService.java')
+    kinds = {e.name: e.kind for e in parsed.entities}
+    assert 'repo' not in kinds
+    assert kinds.get('MAX_ITEMS') == 'constant', 'a real static final constant was lost'
 RUST_IMPL = 'pub struct LineItem { pub cents: u64 }\n\npub trait Priced { fn total(&self) -> u64; }\n\nimpl Priced for LineItem {\n    fn total(&self) -> u64 { self.cents }\n}\n'
 
 def test_rust_impl_is_named_for_its_type_and_does_not_shadow_it(tmp_path):

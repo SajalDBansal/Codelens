@@ -25,8 +25,11 @@ The suite passed throughout, because the only call test in it was written as
 So: every language family gets a case with the call on the RIGHT-HAND SIDE OF
 AN ASSIGNMENT, which is how most real code calls most real functions.
 """
+
 import pytest
+
 from graph_rag.parsing.code_parser import parse_file
+
 
 def _calls_from(parsed, caller_name: str) -> set[str]:
     """
@@ -37,19 +40,156 @@ def _calls_from(parsed, caller_name: str) -> set[str]:
     in one of the two - vanishing from both is the bug this file guards.
     """
     caller_ids = {e.id for e in parsed.entities if e.name == caller_name}
-    assert caller_ids, f'no entity named {caller_name!r} was parsed at all'
+    assert caller_ids, f"no entity named {caller_name!r} was parsed at all"
+
     names: set[str] = set()
     for rel in parsed.relationships:
-        if rel.kind == 'CALLS' and rel.source_id in caller_ids:
-            names.add(rel.target_id.split('::')[-1].split('.')[-1])
+        if rel.kind == "CALLS" and rel.source_id in caller_ids:
+            names.add(rel.target_id.split("::")[-1].split(".")[-1])
     for source_id, name, kind in parsed.unresolved_references:
-        if kind == 'CALLS' and source_id in caller_ids:
+        if kind == "CALLS" and source_id in caller_ids:
             names.add(name)
     return names
-ASSIGNMENT_CASES = [('m.py', 'def outer(v):\n    result = helper(v)\n    return result\n\ndef helper(x):\n    return x\n', 'outer', 'helper'), ('m.ts', 'function outer(v: number) {\n  const result = helper(v);\n  return result;\n}\nfunction helper(x: number) { return x; }\n', 'outer', 'helper'), ('m.js', 'function outer(v) {\n  const result = helper(v);\n  return result;\n}\nfunction helper(x) { return x; }\n', 'outer', 'helper'), ('m.go', 'package p\n\nfunc outer(v int) int {\n\tresult := helper(v)\n\treturn result\n}\n\nfunc helper(x int) int { return x }\n', 'outer', 'helper'), ('M.java', 'public class M {\n    int outer(int v) {\n        int result = helper(v);\n        return result;\n    }\n    int helper(int x) { return x; }\n}\n', 'outer', 'helper'), ('m.rs', 'pub fn outer(v: u32) -> u32 {\n    let result = helper(v);\n    result\n}\n\npub fn helper(x: u32) -> u32 { x }\n', 'outer', 'helper')]
 
-@pytest.mark.parametrize('filename,source,caller,callee', ASSIGNMENT_CASES, ids=[case[0] for case in ASSIGNMENT_CASES])
-def test_call_on_the_right_hand_side_of_an_assignment_is_seen(tmp_path, filename, source, caller, callee):
+
+# (filename, source, calling function, function it calls)
+ASSIGNMENT_CASES = [
+    (
+        "m.py",
+        "def outer(v):\n"
+        "    result = helper(v)\n"
+        "    return result\n"
+        "\n"
+        "def helper(x):\n"
+        "    return x\n",
+        "outer", "helper",
+    ),
+    (
+        "m.ts",
+        "function outer(v: number) {\n"
+        "  const result = helper(v);\n"
+        "  return result;\n"
+        "}\n"
+        "function helper(x: number) { return x; }\n",
+        "outer", "helper",
+    ),
+    (
+        "m.js",
+        "function outer(v) {\n"
+        "  const result = helper(v);\n"
+        "  return result;\n"
+        "}\n"
+        "function helper(x) { return x; }\n",
+        "outer", "helper",
+    ),
+    (
+        "m.go",
+        "package p\n"
+        "\n"
+        "func outer(v int) int {\n"
+        "\tresult := helper(v)\n"
+        "\treturn result\n"
+        "}\n"
+        "\n"
+        "func helper(x int) int { return x }\n",
+        "outer", "helper",
+    ),
+    (
+        "M.java",
+        "public class M {\n"
+        "    int outer(int v) {\n"
+        "        int result = helper(v);\n"
+        "        return result;\n"
+        "    }\n"
+        "    int helper(int x) { return x; }\n"
+        "}\n",
+        "outer", "helper",
+    ),
+    (
+        "M.cs",
+        "public class M {\n"
+        "    int Outer(int v) {\n"
+        "        var result = Helper(v);\n"
+        "        return result;\n"
+        "    }\n"
+        "    int Helper(int x) { return x; }\n"
+        "}\n",
+        "Outer", "Helper",
+    ),
+    (
+        "m.kt",
+        "fun outer(v: Int): Int {\n"
+        "    val result = helper(v)\n"
+        "    return result\n"
+        "}\n"
+        "fun helper(x: Int): Int = x\n",
+        "outer", "helper",
+    ),
+    (
+        "m.swift",
+        "func outer(_ v: Int) -> Int {\n"
+        "    let result = helper(v)\n"
+        "    return result\n"
+        "}\n"
+        "func helper(_ x: Int) -> Int { return x }\n",
+        "outer", "helper",
+    ),
+    (
+        "m.scala",
+        "object M {\n"
+        "  def outer(v: Int): Int = {\n"
+        "    val result = helper(v)\n"
+        "    result\n"
+        "  }\n"
+        "  def helper(x: Int): Int = x\n"
+        "}\n",
+        "outer", "helper",
+    ),
+    (
+        "m.rb",
+        "def outer(v)\n"
+        "  result = helper(v)\n"
+        "  result\n"
+        "end\n"
+        "\n"
+        "def helper(x)\n"
+        "  x\n"
+        "end\n",
+        "outer", "helper",
+    ),
+    (
+        "m.lua",
+        "local function helper(x)\n"
+        "  return x\n"
+        "end\n"
+        "\n"
+        "function outer(v)\n"
+        "  local result = helper(v)\n"
+        "  return result\n"
+        "end\n",
+        "outer", "helper",
+    ),
+    (
+        "m.rs",
+        "pub fn outer(v: u32) -> u32 {\n"
+        "    let result = helper(v);\n"
+        "    result\n"
+        "}\n"
+        "\n"
+        "pub fn helper(x: u32) -> u32 { x }\n",
+        "outer", "helper",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "filename,source,caller,callee",
+    ASSIGNMENT_CASES,
+    ids=[case[0] for case in ASSIGNMENT_CASES],
+)
+def test_call_on_the_right_hand_side_of_an_assignment_is_seen(
+    tmp_path, filename, source, caller, callee
+):
     """
     `result = helper(v)` must produce a call, in every language.
 
@@ -57,17 +197,31 @@ def test_call_on_the_right_hand_side_of_an_assignment_is_seen(tmp_path, filename
     of the call graph, and it is invisible without a test that looks for it.
     """
     path = tmp_path / filename
-    path.write_text(source, encoding='utf-8')
+    path.write_text(source, encoding="utf-8")
     parsed = parse_file(path, filename)
-    assert parsed is not None, f'{filename}: parser returned nothing'
-    assert callee in _calls_from(parsed, caller), f'{filename}: the call to {callee!r} on the right-hand side of an assignment was dropped. {caller!r} was recorded as calling {sorted(_calls_from(parsed, caller))}'
+
+    assert parsed is not None, f"{filename}: parser returned nothing"
+    assert callee in _calls_from(parsed, caller), (
+        f"{filename}: the call to {callee!r} on the right-hand side of an "
+        f"assignment was dropped. {caller!r} was recorded as calling "
+        f"{sorted(_calls_from(parsed, caller))}"
+    )
+
 
 def test_call_in_a_return_statement_still_works(tmp_path):
     """The shape that always worked must keep working."""
-    path = tmp_path / 'r.py'
-    path.write_text('def outer(v):\n    return helper(v)\n\ndef helper(x):\n    return x\n', encoding='utf-8')
-    parsed = parse_file(path, 'r.py')
-    assert 'helper' in _calls_from(parsed, 'outer')
+    path = tmp_path / "r.py"
+    path.write_text(
+        "def outer(v):\n"
+        "    return helper(v)\n"
+        "\n"
+        "def helper(x):\n"
+        "    return x\n",
+        encoding="utf-8",
+    )
+    parsed = parse_file(path, "r.py")
+    assert "helper" in _calls_from(parsed, "outer")
+
 
 def test_a_module_level_constant_still_owns_its_own_calls(tmp_path):
     """
@@ -77,23 +231,56 @@ def test_a_module_level_constant_still_owns_its_own_calls(tmp_path):
     call belongs to the constant, not to the module node. Both claiming it
     would double count the same call.
     """
-    path = tmp_path / 'c.py'
-    path.write_text('SERVICE = build()\n\ndef build():\n    return 1\n', encoding='utf-8')
-    parsed = parse_file(path, 'c.py')
-    assert 'build' in _calls_from(parsed, 'SERVICE')
-    module_calls = [(source_id, name) for source_id, name, kind in parsed.unresolved_references if kind == 'CALLS' and source_id.endswith('::<module>')]
-    module_rels = [rel for rel in parsed.relationships if rel.kind == 'CALLS' and rel.source_id.endswith('::<module>')]
-    assert not module_calls and (not module_rels), "the module node also claimed the constant's call - it is counted twice"
+    path = tmp_path / "c.py"
+    path.write_text(
+        "SERVICE = build()\n"
+        "\n"
+        "def build():\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+    parsed = parse_file(path, "c.py")
+
+    assert "build" in _calls_from(parsed, "SERVICE")
+
+    module_calls = [
+        (source_id, name)
+        for source_id, name, kind in parsed.unresolved_references
+        if kind == "CALLS" and source_id.endswith("::<module>")
+    ]
+    module_rels = [
+        rel for rel in parsed.relationships
+        if rel.kind == "CALLS" and rel.source_id.endswith("::<module>")
+    ]
+    assert not module_calls and not module_rels, (
+        "the module node also claimed the constant's call - it is counted twice"
+    )
+
 
 def test_a_nested_function_keeps_its_own_calls(tmp_path):
     """
     Stopping at nested DEFINITIONS is still correct: `inner` calls
     `deep`, `outer` does not.
     """
-    path = tmp_path / 'n.py'
-    path.write_text('def outer():\n    a = shallow()\n    def inner():\n        b = deep()\n        return b\n    return inner\n\ndef shallow():\n    return 1\n\ndef deep():\n    return 2\n', encoding='utf-8')
-    parsed = parse_file(path, 'n.py')
-    outer_calls = _calls_from(parsed, 'outer')
-    assert 'shallow' in outer_calls
-    assert 'deep' not in outer_calls, 'outer wrongly claimed the nested call'
-    assert 'deep' in _calls_from(parsed, 'inner')
+    path = tmp_path / "n.py"
+    path.write_text(
+        "def outer():\n"
+        "    a = shallow()\n"
+        "    def inner():\n"
+        "        b = deep()\n"
+        "        return b\n"
+        "    return inner\n"
+        "\n"
+        "def shallow():\n"
+        "    return 1\n"
+        "\n"
+        "def deep():\n"
+        "    return 2\n",
+        encoding="utf-8",
+    )
+    parsed = parse_file(path, "n.py")
+
+    outer_calls = _calls_from(parsed, "outer")
+    assert "shallow" in outer_calls
+    assert "deep" not in outer_calls, "outer wrongly claimed the nested call"
+    assert "deep" in _calls_from(parsed, "inner")
