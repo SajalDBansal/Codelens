@@ -149,6 +149,12 @@ def test_heading_path_carries_the_trail(parsed_markdown):
     install = next((c for c in parsed_markdown.chunks if c.title == 'Install'))
     assert install.heading_path == 'Title > Setup > Install'
 
+def test_backtick_names_become_mentions(parsed_markdown):
+    """Only `backticked` names count - not every English word in the prose."""
+    names = {name for _, name in parsed_markdown.mentions}
+    assert 'helper' in names
+    assert 'prose' not in names
+
 def test_whole_file_chunk_for_a_config(tmp_path):
     """A config file has no headings, so it is stored as one chunk."""
     path = tmp_path / 'config.yaml'

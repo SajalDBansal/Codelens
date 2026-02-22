@@ -42,6 +42,20 @@ from .tree_utils import inclusive_end_line
 from .tree_utils import node_text as _text
 _MENTION_RE = re.compile('`([A-Za-z_][A-Za-z0-9_.]*)`')
 
+def _extract_mentions(text: str) -> list[str]:
+    """
+    Find the code identifiers a piece of prose refers to.
+
+    `GraphStore.save_entities` yields "save_entities" - we keep the last
+    segment, because that is what matches a CodeEntity's `name` property.
+    """
+    names = []
+    for raw in _MENTION_RE.findall(text):
+        name = raw.rsplit('.', 1)[-1]
+        if len(name) > 2:
+            names.append(name)
+    return names
+
 def _heading_text(section_node, source: bytes) -> tuple[Optional[str], int]:
     """
     Get a section's heading text and its depth.
@@ -174,7 +188,7 @@ def _parse_markdown(source: bytes, relative_path: str, doc_type: str) -> ParsedD
                 chunks.append(DocChunk(id=part_id, file_path=relative_path, doc_type=doc_type, title=display_title, heading_path=' > '.join(trail), level=level, start_line=piece_start, end_line=own_end_line if len(pieces) == 1 else piece_end, text=piece, content_hash=_hash_text(piece)))
                 if parent_id is not None:
                     relationships.append(Relationship(source_id=parent_id, target_id=part_id, kind='CONTAINS'))
-                for name in []:
+                for name in _extract_mentions(piece):
                     mentions.append((part_id, name))
             chunk_id_for_children = chunk_id if len(pieces) == 1 else f'{chunk_id} (part 1)'
         for child in node.named_children:
@@ -201,7 +215,7 @@ def _parse_plain(source: bytes, relative_path: str, doc_type: str) -> ParsedDocu
         suffix = file_name if len(pieces) == 1 else f'{file_name} (part {index + 1})'
         chunk_id = f'{relative_path}::{suffix}'
         chunks.append(DocChunk(id=chunk_id, file_path=relative_path, doc_type=doc_type, title=suffix, heading_path=suffix, level=0, start_line=start_line, end_line=end_line, text=piece, content_hash=_hash_text(piece)))
-        for name in []:
+        for name in _extract_mentions(piece):
             mentions.append((chunk_id, name))
     return ParsedDocument(file_path=relative_path, doc_type=doc_type, content_hash=_hash_text(text), chunks=chunks, relationships=[], mentions=mentions)
 
@@ -219,5 +233,38 @@ def parse_document(absolute_path: Path, relative_path: str) -> Optional[ParsedDo
     if doc_type in ('markdown', 'rst'):
         parsed = _parse_markdown(source, relative_path, doc_type)
         if parsed.chunks:
-            return parsed
-    return _parse_plain(source, relative_path, doc_type)
+            return _cap_chunks(parsed)
+    return _cap_chunks(_parse_plain(source, relative_path, doc_type))
+
+def _cap_chunks(parsed: ParsedDocument) -> ParsedDocument:
+    """
+    Stop one file from taking over the document index.
+
+    The size limit in config is the first defence; this is the second, and it
+    catches what size alone cannot - a file under the limit that is still
+    mostly repetition. A 236 KB JSON export produced 60 chunks, which was 81%
+    of every Doc node in the graph, and those fragments were then retrieved
+    into the answers for unrelated questions.
+
+    PROSE AND DATA GET DIFFERENT CEILINGS, AND THAT MATTERS
+    -------------------------------------------------------
+    The cap was written for data dumps and then applied to everything,
+    including genuine hand-written documentation - where it silently threw
+    away section 13 onwards. A long architecture document is exactly the kind
+    of file whose later sections carry the deep detail, and losing them
+    without a word is the worst sort of recall hole: nothing fails, the
+    answer is just quietly incomplete.
+
+    Prose cannot be a machine-generated dump - it has headings, an author and
+    a structure - so it gets a far higher ceiling. The tight limit stays where
+    it belongs, on the data-shaped types that motivated it.
+    """
+    limit = config.MAX_PROSE_CHUNKS_PER_FILE if parsed.doc_type in config.PROSE_DOC_TYPES else config.MAX_DOC_CHUNKS_PER_FILE
+    if limit <= 0 or len(parsed.chunks) <= limit:
+        return parsed
+    kept = parsed.chunks[:limit]
+    kept_ids = {chunk.id for chunk in kept}
+    parsed.chunks = kept
+    parsed.relationships = [rel for rel in parsed.relationships if rel.source_id in kept_ids and rel.target_id in kept_ids]
+    parsed.mentions = [(chunk_id, name) for chunk_id, name in parsed.mentions if chunk_id in kept_ids]
+    return parsed

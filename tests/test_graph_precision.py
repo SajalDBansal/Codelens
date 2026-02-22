@@ -91,3 +91,28 @@ def test_rust_impl_is_named_for_its_type_and_does_not_shadow_it(tmp_path):
 
 def _candidate(entity_id, path, language='python', kind='function'):
     return {'id': entity_id, 'filePath': path, 'language': language, 'kind': kind}
+
+def test_a_data_dump_cannot_flood_the_document_index(tmp_path):
+    """
+    A 4,000-record export produced 60 chunks - 81% of every Doc node in a
+    real graph - and those fragments were then retrieved into the answers for
+    completely unrelated questions.
+    """
+    rows = [{'id': i, 'email': f'u{i}@example.com'} for i in range(4000)]
+    path = tmp_path / 'users.json'
+    path.write_text(json.dumps(rows), encoding='utf-8')
+    parsed = parse_document(path, 'users.json')
+    assert parsed is not None
+    assert len(parsed.chunks) <= config.MAX_DOC_CHUNKS_PER_FILE
+    kept = {chunk.id for chunk in parsed.chunks}
+    for rel in parsed.relationships:
+        assert rel.source_id in kept and rel.target_id in kept
+    for chunk_id, _name in parsed.mentions:
+        assert chunk_id in kept
+
+def test_an_ordinary_document_is_untouched(tmp_path):
+    """The cap must not trim a normal README."""
+    path = tmp_path / 'README.md'
+    path.write_text('# Title\n\nIntro.\n\n## One\n\nBody one.\n\n## Two\n\nBody two.\n', encoding='utf-8')
+    parsed = parse_document(path, 'README.md')
+    assert 1 < len(parsed.chunks) <= config.MAX_DOC_CHUNKS_PER_FILE
