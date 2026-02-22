@@ -17,7 +17,7 @@ it is the single most consequential piece of judgement in the indexer:
 Both failure modes are quiet. Neither raises an error. Hence the tests.
 """
 import pytest
-from graph_rag.parsing import language_family, parse_file
+from graph_rag.parsing import language_family, parse_document, parse_file
 
 def candidate(entity_id, language):
     """Shorthand for one row as storage.resolve_names would return it."""
@@ -112,3 +112,49 @@ def parsed_markdown(tmp_path):
     path = tmp_path / 'README.md'
     path.write_text(MD_SOURCE, encoding='utf-8')
     return parse_document(path, 'README.md')
+
+def test_sections_do_not_swallow_their_subsections(parsed_markdown):
+    """
+    The top section must NOT span the whole file.
+
+    tree-sitter nests sections, so a level-1 section contains everything
+    below it. Embedding that would store the entire document as one diluted
+    chunk AND duplicate every subsection inside it.
+    """
+    total_lines = len(MD_SOURCE.splitlines())
+    title = next((c for c in parsed_markdown.chunks if c.title == 'Title'))
+    assert title.end_line < total_lines
+
+def test_chunks_do_not_overlap(parsed_markdown):
+    """Every line belongs to at most one chunk."""
+    seen = set()
+    for chunk in parsed_markdown.chunks:
+        lines = set(range(chunk.start_line, chunk.end_line + 1))
+        assert not lines & seen, f'{chunk.id} overlaps an earlier chunk'
+        seen |= lines
+
+def test_chunk_line_numbers_stay_inside_the_file(parsed_markdown):
+    """An end_line past the end of the file would produce a broken citation."""
+    total_lines = len(MD_SOURCE.splitlines())
+    for chunk in parsed_markdown.chunks:
+        assert 1 <= chunk.start_line <= chunk.end_line <= total_lines
+
+def test_heading_path_carries_the_trail(parsed_markdown):
+    """
+    "Install" alone is meaningless; "Title > Setup > Install" is not.
+
+    The trail goes into the embedded text, so it is what makes one project's
+    Install section distinguishable from every other project's.
+    """
+    install = next((c for c in parsed_markdown.chunks if c.title == 'Install'))
+    assert install.heading_path == 'Title > Setup > Install'
+
+def test_whole_file_chunk_for_a_config(tmp_path):
+    """A config file has no headings, so it is stored as one chunk."""
+    path = tmp_path / 'config.yaml'
+    path.write_text('service:\n  port: 8000\n  debug: true\n', encoding='utf-8')
+    parsed = parse_document(path, 'config.yaml')
+    assert len(parsed.chunks) == 1
+    assert parsed.chunks[0].level == 0
+    assert parsed.chunks[0].start_line == 1
+    assert parsed.chunks[0].end_line == 3

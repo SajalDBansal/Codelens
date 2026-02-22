@@ -8,6 +8,7 @@ it was just wrong, or needlessly expensive, in a way only a measurement showed.
 import json
 from graph_rag import config
 from graph_rag.parsing.code_parser import parse_file
+from graph_rag.parsing.doc_parser import parse_document
 MODULE_BEFORE = 'import os\n\ndef alpha():\n    return 1\n\ndef beta():\n    return 2\n'
 MODULE_AFTER = 'import os\n\ndef alpha():\n    x = 1\n    y = x\n    return y\n\ndef beta():\n    return 2\n'
 
