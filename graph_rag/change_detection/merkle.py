@@ -36,12 +36,19 @@ reads are fast and free. What the tree saves us is the expensive work:
 tree-sitter parsing, OpenAI embedding calls (which cost money), and LadybugDB
 writes. Those are what get skipped for unchanged subtrees.
 """
+
 import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
 from .. import config
 from ..parsing.languages import classify, looks_binary
+
+
+# ---------------------------------------------------------------------------
+# The tree we build in memory
+# ---------------------------------------------------------------------------
 
 @dataclass
 class TreeNode:
@@ -52,16 +59,22 @@ class TreeNode:
     slashes, so the same repo produces identical hashes on Windows and Linux.
     The root folder's path is "" (an empty string).
     """
+
     path: str
     is_dir: bool
     hash: str
-    children: list['TreeNode'] = field(default_factory=list)
+    # Only folders have children. Files always have an empty list.
+    children: list["TreeNode"] = field(default_factory=list)
+    # Only files have these. Folders leave both as None.
+    # Exactly one is set: `language` for code, `doc_type` for a document.
     language: Optional[str] = None
     doc_type: Optional[str] = None
+
 
 def _hash_bytes(data: bytes) -> str:
     """sha256 of raw bytes, as a hex string."""
     return hashlib.sha256(data).hexdigest()
+
 
 def _hash_children(children: list[TreeNode]) -> str:
     """
@@ -79,11 +92,17 @@ def _hash_children(children: list[TreeNode]) -> str:
     """
     lines = []
     for child in sorted(children, key=lambda c: c.path):
-        marker = 'd' if child.is_dir else 'f'
-        name = child.path.rsplit('/', 1)[-1]
-        lines.append(f'{marker}:{name}:{child.hash}')
-    joined = '\n'.join(lines)
-    return _hash_bytes(joined.encode('utf-8'))
+        marker = "d" if child.is_dir else "f"
+        name = child.path.rsplit("/", 1)[-1]
+        lines.append(f"{marker}:{name}:{child.hash}")
+
+    joined = "\n".join(lines)
+    return _hash_bytes(joined.encode("utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# Building the tree
+# ---------------------------------------------------------------------------
 
 def build_merkle_tree(root: Path) -> TreeNode:
     """
@@ -101,44 +120,102 @@ def build_merkle_tree(root: Path) -> TreeNode:
 
     def build_folder(folder: Path, relative: str) -> Optional[TreeNode]:
         children: list[TreeNode] = []
+
+        # `iterdir()` lists the folder's direct contents. We sort by name so
+        # the walk order is predictable, which makes logs easier to read.
         try:
             entries = sorted(folder.iterdir(), key=lambda p: p.name)
         except PermissionError:
+            # A folder we are not allowed to read is treated as empty rather
+            # than crashing the whole indexing run.
             return None
+
         for entry in entries:
             if entry.is_symlink():
+                # Symlinks can point outside the repo, or loop back into it
+                # and cause an infinite walk. Skipping them is the safe call.
                 continue
+
             if entry.is_dir():
                 if entry.name in config.IGNORED_DIRECTORIES:
                     continue
                 if entry.name.endswith(config.IGNORED_DIRECTORY_SUFFIXES):
                     continue
-                child_relative = f'{relative}/{entry.name}' if relative else entry.name
+                child_relative = f"{relative}/{entry.name}" if relative else entry.name
                 child = build_folder(entry, child_relative)
+                # `None` means "this subtree had no code in it" - leave it out.
                 if child is not None:
                     children.append(child)
+
             elif entry.is_file():
-                child_relative = f'{relative}/{entry.name}' if relative else entry.name
+                # Work out the repo-relative path FIRST, and test that rather
+                # than the absolute path on disk.
+                #
+                # This matters: the secret check looks at every folder on the
+                # path, and an absolute path drags in the whole machine
+                # layout. A project living in C:/keys/myproject would have
+                # every one of its files judged secret because of a folder
+                # name that is not part of the project at all.
+                child_relative = f"{relative}/{entry.name}" if relative else entry.name
+
                 language, doc_type = classify(child_relative)
                 if language is None and doc_type is None:
-                    continue
-                size_limit = config.MAX_FILE_SIZE_BYTES if language is not None else config.MAX_DOC_FILE_SIZE_BYTES
+                    continue  # secret, binary, or generated - skip silently
+
+                size_limit = (
+                    config.MAX_FILE_SIZE_BYTES
+                    if language is not None
+                    else config.MAX_DOC_FILE_SIZE_BYTES
+                )
                 try:
                     if entry.stat().st_size > size_limit:
-                        continue
+                        continue  # oversized - usually a generated dump
                     data = entry.read_bytes()
                 except OSError:
-                    continue
+                    continue  # unreadable file - skip rather than crash
+
+                # Last gate, and the one that makes "index unknown extensions
+                # by default" safe: check the actual bytes. An unfamiliar
+                # extension is accepted optimistically by classify(), so this
+                # is where a binary wearing one gets caught.
                 if looks_binary(data):
                     continue
-                children.append(TreeNode(path=child_relative, is_dir=False, hash=_hash_bytes(data), language=language, doc_type=doc_type))
+
+                children.append(
+                    TreeNode(
+                        path=child_relative,
+                        is_dir=False,
+                        hash=_hash_bytes(data),
+                        language=language,
+                        doc_type=doc_type,
+                    )
+                )
+
+        # A folder with nothing indexable in it is left out of the tree, so
+        # it never gets a node and never appears in a diff.
         if not children:
             return None
-        return TreeNode(path=relative, is_dir=True, hash=_hash_children(children), children=children)
-    tree = build_folder(root, relative='')
+
+        return TreeNode(
+            path=relative,
+            is_dir=True,
+            hash=_hash_children(children),
+            children=children,
+        )
+
+    tree = build_folder(root, relative="")
+
+    # A repository with no supported code files at all: return an empty root
+    # so callers do not have to handle `None` as a special case.
     if tree is None:
-        tree = TreeNode(path='', is_dir=True, hash=_hash_children([]), children=[])
+        tree = TreeNode(path="", is_dir=True, hash=_hash_children([]), children=[])
+
     return tree
+
+
+# ---------------------------------------------------------------------------
+# Flattening the tree (used when saving hashes back to LadybugDB)
+# ---------------------------------------------------------------------------
 
 def collect_folder_hashes(node: TreeNode) -> dict[str, str]:
     """Every folder in the tree, as {relative_path: hash}."""
@@ -149,8 +226,10 @@ def collect_folder_hashes(node: TreeNode) -> dict[str, str]:
             result[current.path] = current.hash
             for child in current.children:
                 walk(child)
+
     walk(node)
     return result
+
 
 def collect_file_hashes(node: TreeNode) -> dict[str, str]:
     """Every file in the tree, as {relative_path: hash}."""
@@ -162,23 +241,46 @@ def collect_file_hashes(node: TreeNode) -> dict[str, str]:
                 walk(child)
         else:
             result[current.path] = current.hash
+
     walk(node)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Comparing against last run
+# ---------------------------------------------------------------------------
 
 @dataclass
 class ChangeSet:
     """The answer to 'what do we need to do this run?'"""
+
+    # Files that are new, or whose contents changed. These get re-parsed.
     changed_files: list[str] = field(default_factory=list)
+
+    # Files that were in the graph last run but are gone from disk now.
+    # Their nodes must be deleted, or the graph slowly fills with ghosts.
     deleted_files: list[str] = field(default_factory=list)
+
+    # Files we confirmed are unchanged and therefore skipped entirely.
     unchanged_file_count: int = 0
+
+    # How many whole folders we skipped without looking inside.
+    # This number is the payoff of the Merkle design - watch it be large on
+    # the second run.
     skipped_folder_count: int = 0
 
     @property
     def is_empty(self) -> bool:
         """True when there is genuinely nothing to do."""
-        return not self.changed_files and (not self.deleted_files)
+        return not self.changed_files and not self.deleted_files
 
-def diff_against_stored(tree: TreeNode, stored_folder_hashes: dict[str, str], stored_file_hashes: dict[str, str], force: bool=False) -> ChangeSet:
+
+def diff_against_stored(
+    tree: TreeNode,
+    stored_folder_hashes: dict[str, str],
+    stored_file_hashes: dict[str, str],
+    force: bool = False,
+) -> ChangeSet:
     """
     Compare the freshly built tree against the hashes saved last run.
 
@@ -210,6 +312,9 @@ def diff_against_stored(tree: TreeNode, stored_folder_hashes: dict[str, str], st
     different instructions. Only the first is what --force means.
     """
     changes = ChangeSet()
+
+    # Every file path we saw on disk this run. Anything in the stored hashes
+    # that is NOT in here has been deleted from the repository.
     seen_files: set[str] = set()
 
     def mark_subtree_seen(node: TreeNode) -> None:
@@ -229,18 +334,31 @@ def diff_against_stored(tree: TreeNode, stored_folder_hashes: dict[str, str], st
 
     def walk(node: TreeNode) -> None:
         if node.is_dir:
-            if not False and stored_folder_hashes.get(node.path) == node.hash:
+            # ---- THE KEY CHECK -------------------------------------------
+            # If this folder's hash matches what we stored, nothing inside it
+            # changed at any depth. Do not open it, do not read it, move on.
+            if not force and stored_folder_hashes.get(node.path) == node.hash:
                 changes.skipped_folder_count += 1
                 mark_subtree_seen(node)
                 return
+            # --------------------------------------------------------------
+
+            # Hash differs, so SOMETHING inside changed. Check each child to
+            # narrow down where. Most children usually still match and get
+            # skipped by the same check one level down.
             for child in node.children:
                 walk(child)
         else:
             seen_files.add(node.path)
-            if not False and stored_file_hashes.get(node.path) == node.hash:
+            if not force and stored_file_hashes.get(node.path) == node.hash:
                 changes.unchanged_file_count += 1
             else:
+                # New file, or its contents changed. Re-parse it.
                 changes.changed_files.append(node.path)
+
     walk(tree)
+
+    # Anything we stored last time but did not see on disk is gone.
     changes.deleted_files = sorted(set(stored_file_hashes) - seen_files)
+
     return changes
