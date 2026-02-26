@@ -660,12 +660,79 @@ class GraphStore:
             for batch in _chunked(mentions, 500):
                 session.run('\n                    UNWIND $rows AS row\n                    MATCH (a:Doc {id: row.source})\n                    MATCH (b:CodeEntity {id: row.target})\n                    MERGE (a)-[:MENTIONS]->(b)\n                    ', rows=batch)
 
+    def vector_search(self, query_embedding: list[float], top_k: int) -> list:
+        if top_k <= 0:
+            return []
+        self._validate_vector(query_embedding)
+        rows = self.query(f'MATCH (e:CodeEntity) WHERE e.embedding IS NOT NULL WITH e, (1.0 + array_cosine_similarity(e.embedding, CAST($embedding AS FLOAT[{config.EMBEDDING_DIM}]))) / 2.0 AS score RETURN {schema.ENTITY_RETURN_FIELDS}, score ORDER BY score DESC, e.id LIMIT $topK', embedding=query_embedding, topK=top_k)
+        return [(schema.record_to_entity(r), min(1.0, max(0.0, r['score']))) for r in rows]
+
+    def fulltext_search(self, question: str, top_k: int) -> list:
+        return self._keyword_search('CodeEntity', question, top_k)
+
     @staticmethod
     def _validate_vector(vector: list[float]) -> None:
         if len(vector) != config.EMBEDDING_DIM:
             raise ValueError(f'Expected {config.EMBEDDING_DIM} embedding dimensions, got {len(vector)}')
         if not all((math.isfinite(v) for v in vector)) or not any(vector):
             raise ValueError('Embedding must be finite and have non-zero magnitude')
+
+    def _keyword_search(self, label: str, question: str, top_k: int) -> list:
+        """BM25 over stored text, with exact identifier boosts; no native extensions.
+
+        The corpus is cached for this connection and invalidated on writes. Full
+        vectors remain inside Ladybug; this index contains only tokens and ids.
+        """
+        terms = [t for t in _search_tokens(question) if t not in _STOP_WORDS and len(t) > 1]
+        if not terms or top_k <= 0:
+            return []
+        with self._lock:
+            if label not in self._keyword_cache:
+                fields = 'e.id AS id, e.name AS name, e.filePath AS path, e.code AS text, e.docstring AS doc'
+                if label == 'Doc':
+                    fields = 'e.id AS id, e.title AS name, e.filePath AS path, e.text AS text, e.headingPath AS doc'
+                records = self.query(f'MATCH (e:{label}) RETURN {fields}')
+                corpus, postings, lengths = ({}, {}, {})
+                for row in records:
+                    tokens = _search_tokens(' '.join((str(row[k] or '') for k in ('name', 'path', 'text', 'doc'))))
+                    counts = Counter(tokens)
+                    corpus[row['id']] = row['name'].lower()
+                    lengths[row['id']] = len(tokens)
+                    for token, count in counts.items():
+                        postings.setdefault(token, {})[row['id']] = count
+                self._keyword_cache[label] = (corpus, postings, lengths)
+            corpus, postings, lengths = self._keyword_cache[label]
+            if not corpus:
+                return []
+            average = max(1.0, sum(lengths.values()) / len(corpus))
+            scores = {}
+            for term in set(terms):
+                matches = postings.get(term, {})
+                idf = math.log(1.0 + (len(corpus) - len(matches) + 0.5) / (len(matches) + 0.5))
+                for identifier, frequency in matches.items():
+                    score = idf * frequency * 2.2 / (frequency + 1.2 * (0.25 + 0.75 * lengths[identifier] / average))
+                    if corpus[identifier] == term:
+                        score *= 3.0
+                    scores[identifier] = scores.get(identifier, 0.0) + score
+            ids = sorted(scores, key=lambda key: (-scores[key], key))[:top_k]
+            if not ids:
+                return []
+            fields = schema.ENTITY_RETURN_FIELDS if label == 'CodeEntity' else schema.DOC_RETURN_FIELDS
+            alias = 'e' if label == 'CodeEntity' else 'd'
+            mapper = schema.record_to_entity if label == 'CodeEntity' else schema.record_to_doc
+            rows = self.query(f'MATCH ({alias}:{label}) WHERE {alias}.id IN $ids RETURN {fields}', ids=ids)
+            objects = {r['id']: mapper(r) for r in rows}
+            return [(objects[key], scores[key]) for key in ids]
+
+    def doc_fulltext_search(self, question: str, top_k: int) -> list:
+        return self._keyword_search('Doc', question, top_k)
+
+    def doc_vector_search(self, query_embedding: list[float], top_k: int) -> list:
+        if top_k <= 0:
+            return []
+        self._validate_vector(query_embedding)
+        rows = self.query(f'MATCH (d:Doc) WHERE d.embedding IS NOT NULL WITH d, (1.0 + array_cosine_similarity(d.embedding, CAST($embedding AS FLOAT[{config.EMBEDDING_DIM}]))) / 2.0 AS score RETURN {schema.DOC_RETURN_FIELDS}, score ORDER BY score DESC, d.id LIMIT $topK', embedding=query_embedding, topK=top_k)
+        return [(schema.record_to_doc(r), min(1.0, max(0.0, r['score']))) for r in rows]
 
     def docs_mentioning(self, entity_ids: list[str], limit: int) -> list[tuple[DocChunk, str]]:
         """
@@ -748,4 +815,35 @@ class GraphStore:
             result = session.run('\n                MATCH (s:Summary)\n                WHERE NOT s.path IN $paths\n                DETACH DELETE s\n                RETURN count(s) AS removed\n                ', paths=existing_paths)
             record = result.single()
             return record['removed'] if record else 0
+
+    def summary_vector_search(self, query_embedding: list[float], top_k: int) -> list:
+        if top_k <= 0:
+            return []
+        self._validate_vector(query_embedding)
+        rows = self.query(f'MATCH (s:Summary) WHERE s.embedding IS NOT NULL WITH s, (1.0 + array_cosine_similarity(s.embedding, CAST($embedding AS FLOAT[{config.EMBEDDING_DIM}]))) / 2.0 AS score RETURN {schema.SUMMARY_RETURN_FIELDS}, score ORDER BY score DESC, s.id LIMIT $topK', embedding=query_embedding, topK=top_k)
+        return [(schema.record_to_summary(r), min(1.0, max(0.0, r['score']))) for r in rows]
+
+    def stats(self) -> dict[str, int]:
+        """
+        Counts for the summary printed at the end of an indexing run.
+
+        Deliberately written as several small queries instead of one clever
+        one: each line counts one table or relationship type and is easy to inspect.
+        """
+        counts = {'folders': 'MATCH (d:Folder)     RETURN count(d) AS n', 'files': 'MATCH (f:File)       RETURN count(f) AS n', 'entities': 'MATCH (e:CodeEntity) RETURN count(e) AS n', 'embedded': 'MATCH (e:CodeEntity) WHERE e.embedding IS NOT NULL RETURN count(e) AS n', 'doc chunks': 'MATCH (d:Doc) RETURN count(d) AS n', 'docs embedded': 'MATCH (d:Doc) WHERE d.embedding IS NOT NULL RETURN count(d) AS n', 'CALLS edges': 'MATCH ()-[r:CALLS]->()    RETURN count(r) AS n', 'CONTAINS edges': 'MATCH ()-[r:CONTAINS]->() RETURN count(r) AS n', 'EXTENDS edges': 'MATCH ()-[r:EXTENDS]->()  RETURN count(r) AS n', 'USES_TYPE edges': 'MATCH ()-[r:USES_TYPE]->() RETURN count(r) AS n', 'IMPORTS edges': 'MATCH ()-[r:IMPORTS]->()  RETURN count(r) AS n', 'MENTIONS edges': 'MATCH ()-[r:MENTIONS]->() RETURN count(r) AS n', 'interfaces': 'MATCH (i:Interface) RETURN count(i) AS n', 'folder summaries': 'MATCH (s:Summary) RETURN count(s) AS n', 'REFERENCES edges': 'MATCH ()-[r:REFERENCES]->() RETURN count(r) AS n'}
+        result: dict[str, int] = {}
+        with self._session() as session:
+            for label, query in counts.items():
+                result[label] = session.run(query).single()['n']
+        return result
 _STOP_WORDS = frozenset({'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'do', 'does', 'did', 'how', 'what', 'where', 'when', 'why', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'from', 'by', 'and', 'or', 'not', 'it', 'its', 'i', 'we', 'you', 'can', 'could', 'should', 'would', 'will', 'shall', 'get', 'show', 'me', 'my', 'our', 'please', 'tell', 'about', 'does'})
+
+def _search_tokens(text: str) -> list[str]:
+    """Preserve complete identifiers and add camel/snake components."""
+    tokens = []
+    for word in re.findall('[^\\W]+', text, re.UNICODE):
+        tokens.append(word.lower())
+        parts = re.sub('([a-z0-9])([A-Z])', '\\1 \\2', word).replace('_', ' ').split()
+        if len(parts) > 1:
+            tokens.extend((p.lower() for p in parts))
+    return tokens

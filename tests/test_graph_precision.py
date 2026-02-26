@@ -116,3 +116,17 @@ def test_an_ordinary_document_is_untouched(tmp_path):
     path.write_text('# Title\n\nIntro.\n\n## One\n\nBody one.\n\n## Two\n\nBody two.\n', encoding='utf-8')
     parsed = parse_document(path, 'README.md')
     assert 1 < len(parsed.chunks) <= config.MAX_DOC_CHUNKS_PER_FILE
+
+def test_min_similarity_is_on_normalised_cosine_scale():
+    """
+    The graph store normalises cosine into 0..1 as (1 + cosine) / 2, so 0.5 means
+    "unrelated" and nothing an index returns ever falls far below it.
+
+    The threshold was written as though it were raw cosine (0.25, i.e. a
+    cosine of -0.5), which is below the floor the index can produce. It
+    therefore filtered nothing at all: on a real graph the WORST match for a
+    deliberately absurd question still scored 0.4894, and five confident
+    seeds went into the prompt anyway.
+    """
+    assert config.MIN_SIMILARITY > 0.5, 'a threshold at or below 0.5 can never reject a vector hit, because 0.5 is the normalized score for two orthogonal vectors'
+    assert config.MIN_SIMILARITY < 1.0
