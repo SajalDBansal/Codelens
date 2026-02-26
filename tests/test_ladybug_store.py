@@ -27,6 +27,44 @@ def doc(name='Setup'):
 def edge(a, b, kind='CALLS', confidence=0.8):
     return Relationship(source_id=a.id, target_id=b.id, kind=kind, confidence=confidence, resolved_by='test')
 
+def test_document_links_in_both_directions(store):
+    a, b = (entity('checkout'), entity('charge'))
+    d, child = (doc(), doc('Details'))
+    store.save_entities([a, b])
+    store.save_docs([d, child])
+    store.save_doc_relationships([edge(d, a, 'MENTIONS'), edge(d, b, 'MENTIONS'), edge(d, child, 'CONTAINS')])
+    assert {x.id for x, _ in store.entities_mentioned_by([d.id], 10)} == {a.id, b.id}
+    assert store.docs_mentioning([a.id], 10)[0][0].id == d.id
+    store.clear_doc_outgoing_edges('README.md')
+    assert store.docs_mentioning([a.id], 10) == []
+
+def test_resolver_total_and_reference_roundtrip(store, monkeypatch):
+    monkeypatch.setattr(config, 'MAX_NAME_CANDIDATES', 1)
+    a = entity('login', unresolved_calls=['later'], external_calls=['external'], call_owner_hints={'later': 'Auth'}, call_arity_hints={'later': 2}, param_count=2)
+    b = entity('login', 'b.py')
+    store.save_entities([a, b])
+    matches = store.resolve_names(['login'])['login']
+    assert matches['total'] == 2 and len(matches['candidates']) == 1
+    pending = store.get_reference_state([])
+    assert pending[0]['callOwnerHints'] == ['later>Auth']
+    assert pending[0]['callArityHints'] == ['later>2']
+    store.save_reference_state([{'id': a.id, 'unresolvedCalls': [], 'unresolvedTypes': [], 'unresolvedExtends': [], 'externalCalls': ['external'], 'externalTypes': []}])
+    assert store.get_reference_state([]) == []
+    assert store.get_reference_state(['external'])[0]['id'] == a.id
+    assert store.get_external_references(['external'])[0]['id'] == a.id
+
+def test_missing_owner_and_imports(store):
+    owner = entity('Auth', kind='class')
+    member = entity('login', 'b.py', kind='method', owner_name='Auth')
+    store.save_entities([owner, member])
+    assert store.get_unowned_members()[0]['id'] == member.id
+    store.save_relationships([edge(owner, member, 'CONTAINS'), edge(owner, member, 'USES_TYPE')])
+    assert store.get_unowned_members() == []
+    store.save_file_imports('a.py', ['b.py'])
+    assert store.get_import_map() == {'a.py': {'b.py'}}
+    store.clear_file_imports('a.py')
+    assert store.get_import_map() == {}
+
 def test_transactions_roll_back(store):
 
     def fail(tx):

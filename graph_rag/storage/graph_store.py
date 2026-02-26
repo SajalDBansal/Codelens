@@ -335,6 +335,259 @@ class GraphStore:
         with self._session() as session:
             session.run('\n                UNWIND $ids AS id\n                MATCH (e:CodeEntity {id: id})\n                DETACH DELETE e\n                ', ids=entity_ids)
 
+    def get_pending_references(self) -> list[dict]:
+        """
+        The AMBIGUOUS references - names that exist in the graph more than
+        once, so we refused to guess which was meant.
+
+        Returns [{"id", "language", "names", "kind"}, ...].
+
+        THIS IS WHAT STOPS THE CALL GRAPH FROM DECAYING.
+        ------------------------------------------------
+        A call can only be linked once BOTH ends are in the graph. The caller
+        is parsed when its own file changes, but the callee may not be added
+        until a later run - and by then the caller is unchanged, so it is
+        never looked at again. Every such pair was a permanently missing edge.
+        Retrying the pending names makes the call graph converge instead.
+
+        WHY THIS IS NOW ONLY THE AMBIGUOUS ONES
+        ---------------------------------------
+        `unresolvedCalls` used to hold two completely different things at
+        once: "not resolvable YET" (the target is not indexed yet - worth
+        retrying) and "not resolvable AT ALL" (a call into the standard
+        library - will never resolve). Both were stored the same way and
+        retried the same way, forever. Nothing pruned a name once it DID
+        resolve either, because resolution happened in a later step that
+        never wrote its results back.
+
+        The effect was that step 7a of the indexer re-resolved every reference
+        in the entire repository on every run, including `len` and `print`.
+        Scanning this project's own source produced 702 permanently-pending
+        names from 8,900 lines; at that ratio a 500k-line repository would
+        re-query about 40,000 names on every run, for ever, and the set only
+        ever grew. Steps 2-6 scale with what CHANGED; this one scaled with
+        repository SIZE, which quietly undid the whole point of the Merkle
+        tree.
+
+        Now the two are stored apart. Ambiguous names stay here and are
+        retried every run - there are few of them, and they are the ones that
+        can genuinely be resolved by a later run. External names go to
+        `externalCalls` and are retried only when a matching name actually
+        enters the graph. See get_external_references.
+        """
+        with self._session() as session:
+            result = session.run('\n                MATCH (e:CodeEntity)\n                WHERE (e.unresolvedCalls IS NOT NULL AND size(e.unresolvedCalls) > 0)\n                   OR (e.unresolvedExtends IS NOT NULL AND size(e.unresolvedExtends) > 0)\n                RETURN e.id AS id, e.language AS language,\n                       coalesce(e.unresolvedCalls, [])   AS calls,\n                       coalesce(e.unresolvedExtends, []) AS extends\n                ')
+            pending: list[dict] = []
+            for record in result:
+                if record['calls']:
+                    pending.append({'id': record['id'], 'language': record['language'], 'names': record['calls'], 'kind': 'CALLS'})
+                if record['extends']:
+                    pending.append({'id': record['id'], 'language': record['language'], 'names': record['extends'], 'kind': 'EXTENDS'})
+            return pending
+
+    def clear_outgoing_edges(self, file_path: str) -> None:
+        """
+        Delete the edges that START at entities in this file.
+
+        We do this before re-writing a changed file's edges. If we only added
+        edges, a call that was DELETED from the code would keep its edge in
+        the graph forever.
+
+        We only clear OUTGOING edges because those are the ones this file is
+        responsible for. Incoming edges belong to whichever other file makes
+        the call, and that file will refresh its own edges when it changes.
+        """
+        with self._session() as session:
+            session.run('\n                MATCH (e:CodeEntity {filePath: $path})-[r:CALLS|CONTAINS|EXTENDS|USES_TYPE]->()\n                DELETE r\n                ', path=file_path)
+
+    def get_external_references(self, new_names: list[str]) -> list[dict]:
+        """
+        Pending references that were classified "external" and whose name has
+        just appeared in the graph for the first time.
+
+        This is the other half of the fix described in
+        get_pending_references. A name we could not find anywhere is almost
+        always a library call, and retrying it on every run for the life of
+        the repository is pure waste. But it is not ALWAYS a library call:
+        sometimes the file defining it simply had not been indexed yet, and
+        refusing to ever look again would reintroduce exactly the graph decay
+        that pending references exist to prevent.
+
+        So we retry an external name on precisely the run where retrying
+        could newly succeed: the one where an entity with that name was
+        written. `new_names` is what the indexer just saved, so the work here
+        is proportional to what CHANGED rather than to repository size.
+        """
+        if not new_names:
+            return []
+        with self._session() as session:
+            result = session.run('\n                UNWIND $names AS wanted\n                MATCH (e:CodeEntity)\n                WHERE wanted IN e.externalCalls\n                WITH e, collect(DISTINCT wanted) AS names\n                RETURN e.id AS id, e.language AS language, names\n                ', names=list(set(new_names)))
+            return [{'id': r['id'], 'language': r['language'], 'names': r['names'], 'kind': 'CALLS'} for r in result]
+
+    def get_unowned_members(self) -> list[dict]:
+        """
+        Definitions that name an owning type which is not yet linked to them.
+
+        A Go method declares its type in a receiver and a Rust `impl` block
+        declares the type it belongs to, so in both languages the owner can
+        live in a different file from the member. When it does, the member
+        cannot be linked at parse time - the parser only ever sees one file.
+
+        This is the same "both ends must exist" problem that pending call
+        references solve, and it converges the same way: the set shrinks to
+        empty as the owning types get indexed, so it costs nothing on a
+        settled repository.
+        """
+        with self._session() as session:
+            result = session.run('\n                MATCH (e:CodeEntity)\n                WHERE e.ownerName IS NOT NULL\n                  AND NOT EXISTS {\n                        MATCH (o:CodeEntity {name: e.ownerName})-[:CONTAINS]->(e)\n                  }\n                RETURN e.id AS id, e.ownerName AS ownerName,\n                       e.language AS language, e.filePath AS filePath\n                ')
+            return [dict(record) for record in result]
+
+    def get_reference_state(self, new_names: list[str]) -> list[dict]:
+        """
+        Everything resolution needs to reconsider on THIS run, in one query.
+
+        Returns [{"id", "language", "unresolvedCalls", "unresolvedExtends",
+        "externalCalls"}, ...] for every entity that either
+
+          - still has an AMBIGUOUS name (those are always worth retrying:
+            there are few of them and a later run can genuinely settle them),
+            or
+          - has an EXTERNAL name that has just appeared in the graph, because
+            `new_names` is what this run wrote, and that is the only event
+            that can turn "nowhere to be found" into "found".
+
+        The whole external list comes back, not only the matching names, so
+        the caller can rewrite the property without losing the ones it did
+        not reconsider.
+
+        This is the query that puts step 7a back on the Merkle budget: its
+        cost tracks what changed, not how big the repository is.
+        """
+        with self._session() as session:
+            result = session.run("\n                WITH $newNames AS knownNames\n                MATCH (e:CodeEntity)\n                WHERE size(coalesce(e.unresolvedCalls, [])) > 0\n                   OR size(coalesce(e.unresolvedTypes, [])) > 0\n                   OR size(coalesce(e.unresolvedExtends, [])) > 0\n                   OR any(n IN coalesce(e.externalCalls, []) WHERE n IN knownNames)\n                   OR any(n IN coalesce(e.externalTypes, []) WHERE n IN knownNames)\n                RETURN e.id       AS id,\n                       e.language AS language,\n                       // The receiver types this entity's own source\n                       // declared. This is the evidence that settles an\n                       // override collision - see models.CodeEntity.\n                       coalesce(e.callOwnerHints, [])    AS callOwnerHints,\n                       coalesce(e.callArityHints, [])    AS callArityHints,\n                       coalesce(e.unresolvedCalls, [])   AS unresolvedCalls,\n                       coalesce(e.unresolvedTypes, [])   AS unresolvedTypes,\n                       coalesce(e.unresolvedExtends, []) AS unresolvedExtends,\n                       coalesce(e.externalCalls, [])     AS externalCalls,\n                       coalesce(e.externalTypes, [])     AS externalTypes\n                ", newNames=list(set(new_names)))
+            return [dict(record) for record in result]
+
+    def save_reference_state(self, rows: list[dict]) -> None:
+        """
+        Write back what resolution concluded about each entity's pending names.
+
+        Rows are {"id", "unresolvedCalls", "unresolvedExtends",
+        "unresolvedTypes", "externalCalls"}.
+
+        WHY WRITING BACK MATTERS
+        ------------------------
+        Resolution used to be a read-only pass: it worked out which names now
+        linked, created the edges, and then threw that knowledge away. The
+        node kept claiming those names were unresolved, so the next run did
+        the identical work again and reached the identical conclusion. Three
+        names in a 52-entity demo graph were still listed as unresolved after
+        their CALLS edge had already been created.
+
+        Persisting the verdict is what makes the pending set SHRINK as the
+        graph converges, instead of only ever growing.
+        """
+        if not rows:
+            return
+        with self._session() as session:
+            for batch in _chunked(rows, 500):
+                session.run('\n                    UNWIND $rows AS row\n                    MATCH (e:CodeEntity {id: row.id})\n                    SET e.unresolvedCalls   = row.unresolvedCalls,\n                        e.unresolvedExtends = row.unresolvedExtends,\n                        e.unresolvedTypes   = row.unresolvedTypes,\n                        e.externalCalls     = row.externalCalls,\n                        e.externalTypes     = row.externalTypes\n                    ', rows=batch)
+
+    def save_relationships(self, relationships: list[Relationship]) -> None:
+        """
+        Create edges between entities.
+
+        Cypher cannot take a relationship type as a parameter, so we group
+        the edges by type and paste the type into the query - after checking
+        it against a fixed whitelist in schema.py, which makes injection
+        impossible.
+        """
+        if not relationships:
+            return
+        by_kind: dict[str, list[dict]] = {}
+        for rel in relationships:
+            if rel.kind not in schema.ALLOWED_ENTITY_RELATIONSHIPS:
+                continue
+            by_kind.setdefault(rel.kind, []).append({'source': rel.source_id, 'target': rel.target_id, 'confidence': rel.confidence, 'resolvedBy': rel.resolved_by})
+        with self._session() as session:
+            for kind, rows in by_kind.items():
+                for batch in _chunked(rows, 500):
+                    session.run(f'\n                        UNWIND $rows AS row\n                        MATCH (a:CodeEntity {{id: row.source}})\n                        MATCH (b:CodeEntity {{id: row.target}})\n                        MERGE (a)-[r:{kind}]->(b)\n                        SET r.confidence = row.confidence,\n                            r.resolvedBy  = row.resolvedBy\n                        ', rows=batch)
+
+    def clear_file_imports(self, file_path: str) -> None:
+        """
+        Drop this file's IMPORTS edges before rewriting them.
+
+        Nothing used to remove them, so deleting an import statement left its
+        IMPORTS edge in the graph forever. Every edge here is derived purely
+        from the importing file's own text, so replacing them wholesale is
+        both correct and simple.
+        """
+        with self._session() as session:
+            session.run('\n                MATCH (f:File {path: $path})-[r:IMPORTS]->()\n                DELETE r\n                ', path=file_path)
+
+    def save_file_imports(self, file_path: str, imported_paths: list[str]) -> None:
+        """Create (:File)-[:IMPORTS]->(:File) edges."""
+        if not imported_paths:
+            return
+        with self._session() as session:
+            session.run('\n                MATCH (source:File {path: $path})\n                UNWIND $targets AS target\n                MATCH (t:File {path: target})\n                MERGE (source)-[:IMPORTS]->(t)\n                ', path=file_path, targets=imported_paths)
+
+    def clear_interface_refs(self, file_path: str) -> None:
+        with self._session() as session:
+            for label in ('CodeEntity', 'Doc'):
+                session.run(f'MATCH (n:{label})-[r:REFERENCES]->(:Interface) WHERE n.filePath=$path DELETE r', path=file_path)
+
+    def save_interface_refs(self, refs: list[tuple[str, str, str]]) -> None:
+        rows = [{'source': source, 'id': schema.interface_id(kind, value), 'kind': kind, 'value': value} for source, kind, value in refs]
+        with self._session() as session:
+            for batch in _chunked(rows, 500):
+                session.run('UNWIND $rows AS row MERGE (i:Interface {id:row.id}) SET i.kind=row.kind, i.value=row.value', rows=batch)
+                for label in ('CodeEntity', 'Doc'):
+                    session.run(f'UNWIND $rows AS row MATCH (n:{label} {{id:row.source}}) MATCH (i:Interface {{id:row.id}}) MERGE (n)-[:REFERENCES]->(i)', rows=batch)
+
+    def prune_noisy_interfaces(self, max_fanout: int) -> int:
+        rows = self.query('MATCH (i:Interface) OPTIONAL MATCH (i)<-[:REFERENCES]-(n) WITH i, count(n) AS fanout WHERE fanout > $cap OR fanout < 2 RETURN i.id AS id', cap=max_fanout)
+        if rows:
+            self.query('MATCH (i:Interface) WHERE i.id IN $ids DETACH DELETE i', ids=[r['id'] for r in rows])
+        return len(rows)
+
+    def entities_sharing_interfaces(self, entity_ids: list[str], limit: int) -> list[dict]:
+        if not entity_ids or limit <= 0:
+            return []
+        found = {}
+        for label in ('CodeEntity', 'Doc'):
+            language = 'seed.language' if label == 'CodeEntity' else 'NULL'
+            rows = self.query(f'MATCH (seed:{label})-[:REFERENCES]->(i:Interface) MATCH (e:CodeEntity)-[:REFERENCES]->(i) WHERE seed.id IN $ids AND NOT e.id IN $ids AND ({language} IS NULL OR e.language <> {language} OR e.filePath <> seed.filePath) RETURN {schema.ENTITY_RETURN_FIELDS}, i.kind AS tokenKind, i.value AS tokenValue ORDER BY e.id, tokenKind, tokenValue', ids=entity_ids)
+            for r in rows:
+                found.setdefault(r['id'], {'entity': schema.record_to_entity(r), 'reason': f"shares the {r['tokenKind']} `{r['tokenValue']}` with a match"})
+        return list(found.values())[:limit]
+
+    def resolve_names(self, names: list[str]) -> dict[str, dict]:
+        if not names:
+            return {}
+        rows = self.query('MATCH (e:CodeEntity) WHERE e.name IN $names RETURN e.name AS name, e.id AS id, e.language AS language, e.filePath AS filePath, e.kind AS kind, e.ownerName AS ownerName, e.paramCount AS paramCount, e.flexibleArity AS flexibleArity ORDER BY e.id', names=sorted(set(names)))
+        result = {}
+        for row in rows:
+            entry = result.setdefault(row.pop('name'), {'candidates': [], 'total': 0})
+            entry['total'] += 1
+            if len(entry['candidates']) < config.MAX_NAME_CANDIDATES:
+                entry['candidates'].append(row)
+        return result
+
+    def get_import_map(self) -> dict[str, set[str]]:
+        """
+        {file path: the set of file paths it imports}.
+
+        Used to disambiguate call targets. The parser reduces a call to a bare
+        NAME, so `save` may match a dozen entities across the repo; but a file
+        can only call what it can see, and what it can see is overwhelmingly
+        what it imports. Narrowing the candidates to imported files turns most
+        "ambiguous, create no edge" verdicts into correct links.
+        """
+        with self._session() as session:
+            result = session.run('\n                MATCH (a:File)-[:IMPORTS]->(b:File)\n                RETURN a.path AS source, collect(b.path) AS targets\n                ')
+            return {record['source']: set(record['targets']) for record in result}
+
     def get_doc_hashes(self, file_path: str) -> dict[str, str]:
         """{doc chunk id: block hash} for one file - the Merkle check for docs."""
         with self._session() as session:
@@ -379,10 +632,67 @@ class GraphStore:
         with self._session() as session:
             session.run('\n                UNWIND $ids AS id\n                MATCH (d:Doc {id: id})\n                DETACH DELETE d\n                ', ids=doc_ids)
 
+    def clear_doc_outgoing_edges(self, file_path: str) -> None:
+        """
+        Drop the edges starting at this file's doc chunks, before rewriting.
+
+        Same reasoning as clear_outgoing_edges for code: if a README stops
+        mentioning `save_entities`, the MENTIONS edge has to go away too, and
+        only a delete-then-recreate guarantees that.
+        """
+        with self._session() as session:
+            session.run('\n                MATCH (d:Doc {filePath: $path})-[r:CONTAINS|MENTIONS]->()\n                DELETE r\n                ', path=file_path)
+
+    def save_doc_relationships(self, relationships: list[Relationship]) -> None:
+        """
+        Create Doc -> Doc (CONTAINS) and Doc -> CodeEntity (MENTIONS) edges.
+
+        The target label differs by edge type, so the two are handled
+        separately rather than with one clever query.
+        """
+        if not relationships:
+            return
+        contains = [{'source': r.source_id, 'target': r.target_id} for r in relationships if r.kind == 'CONTAINS']
+        mentions = [{'source': r.source_id, 'target': r.target_id} for r in relationships if r.kind == 'MENTIONS']
+        with self._session() as session:
+            for batch in _chunked(contains, 500):
+                session.run('\n                    UNWIND $rows AS row\n                    MATCH (a:Doc {id: row.source})\n                    MATCH (b:Doc {id: row.target})\n                    MERGE (a)-[:CONTAINS]->(b)\n                    ', rows=batch)
+            for batch in _chunked(mentions, 500):
+                session.run('\n                    UNWIND $rows AS row\n                    MATCH (a:Doc {id: row.source})\n                    MATCH (b:CodeEntity {id: row.target})\n                    MERGE (a)-[:MENTIONS]->(b)\n                    ', rows=batch)
+
     @staticmethod
     def _validate_vector(vector: list[float]) -> None:
         if len(vector) != config.EMBEDDING_DIM:
             raise ValueError(f'Expected {config.EMBEDDING_DIM} embedding dimensions, got {len(vector)}')
         if not all((math.isfinite(v) for v in vector)) or not any(vector):
             raise ValueError('Embedding must be finite and have non-zero magnitude')
+
+    def docs_mentioning(self, entity_ids: list[str], limit: int) -> list[tuple[DocChunk, str]]:
+        """
+        Find the documentation that talks about these code entities.
+
+        This is the code -> docs direction of the MENTIONS edge: you asked a
+        question, vector search found a function, and this pulls in the
+        README section that documents it. Plain RAG cannot do this - it would
+        only find the docs if the docs happened to match the question text.
+        """
+        if not entity_ids:
+            return []
+        with self._session() as session:
+            result = session.run(f'\n                MATCH (d:Doc)-[:MENTIONS]->(e:CodeEntity)\n                WHERE e.id IN $entityIds\n                WITH d, collect(DISTINCT e.name) AS names\n                RETURN {schema.DOC_RETURN_FIELDS}, names\n                LIMIT $limit\n                ', entityIds=entity_ids, limit=limit)
+            return [(schema.record_to_doc(record), 'documents ' + ', '.join(sorted(record['names'])[:3])) for record in result]
+
+    def entities_mentioned_by(self, doc_ids: list[str], limit: int) -> list[tuple[CodeEntity, str]]:
+        """
+        Find the code that these documentation sections talk about.
+
+        The docs -> code direction. If the question matched a README section,
+        this hands back the actual implementation it refers to, so the answer
+        can quote real code instead of only repeating the documentation.
+        """
+        if not doc_ids:
+            return []
+        with self._session() as session:
+            result = session.run(f'\n                MATCH (d:Doc)-[:MENTIONS]->(e:CodeEntity)\n                WHERE d.id IN $docIds\n                WITH e, collect(DISTINCT d.title)[1] AS docTitle\n                RETURN {schema.ENTITY_RETURN_FIELDS}, docTitle\n                LIMIT $limit\n                ', docIds=doc_ids, limit=limit)
+            return [(schema.record_to_entity(record), f'''mentioned in "{record['docTitle']}"''') for record in result]
 _STOP_WORDS = frozenset({'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'do', 'does', 'did', 'how', 'what', 'where', 'when', 'why', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'from', 'by', 'and', 'or', 'not', 'it', 'its', 'i', 'we', 'you', 'can', 'could', 'should', 'would', 'will', 'shall', 'get', 'show', 'me', 'my', 'our', 'please', 'tell', 'about', 'does'})
