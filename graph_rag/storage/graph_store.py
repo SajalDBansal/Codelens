@@ -695,4 +695,57 @@ class GraphStore:
         with self._session() as session:
             result = session.run(f'\n                MATCH (d:Doc)-[:MENTIONS]->(e:CodeEntity)\n                WHERE d.id IN $docIds\n                WITH e, collect(DISTINCT d.title)[1] AS docTitle\n                RETURN {schema.ENTITY_RETURN_FIELDS}, docTitle\n                LIMIT $limit\n                ', docIds=doc_ids, limit=limit)
             return [(schema.record_to_entity(record), f'''mentioned in "{record['docTitle']}"''') for record in result]
+
+    def get_entities_for_folders(self, folder_paths: list[str]) -> dict[str, list[CodeEntity]]:
+        """Read complete current folder contents, including unchanged files."""
+        result = {path: [] for path in folder_paths}
+        with self._session() as session:
+            for batch in _chunked(folder_paths, 1000):
+                rows = session.run(f'\n                    UNWIND $paths AS path\n                    MATCH (:Folder {{path: path}})-[:CONTAINS]->(:File)-[:CONTAINS]->(e:CodeEntity)\n                    RETURN path AS folder, {schema.ENTITY_RETURN_FIELDS}\n                    ORDER BY e.filePath, e.startLine, e.id\n                    ', paths=batch)
+                for row in rows:
+                    result[row['folder']].append(schema.record_to_entity(row))
+        return result
+
+    def delete_summaries(self, folder_paths: list[str]) -> None:
+        """Remove outdated overviews, including folders with no code left."""
+        if folder_paths:
+            with self._session() as session:
+                session.run('MATCH (s:Summary) WHERE s.path IN $paths DETACH DELETE s', paths=folder_paths).consume()
+
+    def get_summary_hashes(self) -> dict[str, str | None]:
+        """{folder path: the Merkle hash the stored summary was written from}."""
+        with self._session() as session:
+            result = session.run('\n                MATCH (s:Summary)\n                RETURN s.path AS path, CASE\n                    WHEN s.embedding IS NOT NULL AND s.embeddingHash = s.embeddingInputHash\n                    THEN s.contentHash ELSE null END AS hash\n                ')
+            return {record['path']: record['hash'] for record in result}
+
+    def save_summaries(self, summaries: list) -> None:
+        """Create or update Summary nodes and hang each off its Folder."""
+        if not summaries:
+            return
+        rows = []
+        for summary in summaries:
+            properties = schema.summary_to_properties(summary)
+            properties.pop('embedding')
+            properties['embeddingInputHash'] = embedding_fingerprint(build_summary_embedding_text(summary))
+            rows.append(properties)
+        with self._session() as session:
+            session.run('\n                UNWIND $rows AS row\n                MERGE (s:Summary {id: row.id})\n                // Keep a vector only when it describes this exact input.\n                SET s.embedding = CASE\n                        WHEN s.embeddingHash = row.embeddingInputHash THEN s.embedding\n                        ELSE null END,\n                    s.embeddingHash = CASE\n                        WHEN s.embeddingHash = row.embeddingInputHash THEN s.embeddingHash\n                        ELSE null END,\n                    s.embeddingInputHash = row.embeddingInputHash\n                SET s.path        = row.path,\n                    s.text        = row.text,\n                    s.entityCount = row.entityCount,\n                    s.contentHash = row.contentHash\n                WITH s, row\n                MATCH (f:Folder {path: row.path})\n                MERGE (f)-[:CONTAINS]->(s)\n                ', rows=rows)
+
+    def save_summary_embeddings(self, id_to_vector: dict) -> None:
+        """Attach vectors to Summary nodes."""
+        if not id_to_vector:
+            return
+        for vector in id_to_vector.values():
+            self._validate_vector(vector)
+        rows = [{'id': key, 'embedding': value} for key, value in id_to_vector.items()]
+        with self._session() as session:
+            for batch in _chunked(rows, 100):
+                session.run(f'\n                    UNWIND $rows AS row\n                    MATCH (s:Summary {{id: row.id}})\n                    SET s.embedding = CAST(row.embedding AS FLOAT[{config.EMBEDDING_DIM}]),\n                        s.embeddingHash = s.embeddingInputHash\n                    ', rows=batch)
+
+    def delete_missing_summaries(self, existing_paths: list[str]) -> int:
+        """Remove summaries for folders that are no longer in the repository."""
+        with self._session() as session:
+            result = session.run('\n                MATCH (s:Summary)\n                WHERE NOT s.path IN $paths\n                DETACH DELETE s\n                RETURN count(s) AS removed\n                ', paths=existing_paths)
+            record = result.single()
+            return record['removed'] if record else 0
 _STOP_WORDS = frozenset({'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'do', 'does', 'did', 'how', 'what', 'where', 'when', 'why', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'from', 'by', 'and', 'or', 'not', 'it', 'its', 'i', 'we', 'you', 'can', 'could', 'should', 'would', 'will', 'shall', 'get', 'show', 'me', 'my', 'our', 'please', 'tell', 'about', 'does'})
