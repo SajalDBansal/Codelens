@@ -13,6 +13,7 @@ Each test names the failure it exists to prevent.
 from graph_rag import config
 from graph_rag.models import CodeEntity, RetrievedEntity
 from graph_rag.parsing.doc_parser import _split_large_text
+from graph_rag.storage.graph_store import reciprocal_rank_fusion
 
 def test_a_file_with_no_blank_lines_still_splits():
     """
