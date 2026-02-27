@@ -48,6 +48,29 @@ def test_persistence_and_all_vector_searches(store):
         assert reopened.summary_vector_search([1.0, 0.0, 0.0], 2)[0][0].id == s.id
         assert reopened.stats()['embedded'] == 3
 
+def test_graph_expansion_directions_and_file_boundary(store):
+    caller, seed, callee, second, unrelated = [entity(n) for n in ('caller', 'seed', 'callee', 'second', 'unrelated')]
+    store.save_entities([caller, seed, callee, second, unrelated])
+    store.save_relationships([edge(caller, seed), edge(seed, callee), edge(callee, second), edge(second, seed)])
+    one = {r['entity'].id: r for r in store.expand_neighbours([seed.id], 1, 20)}
+    assert set(one) == {caller.id, callee.id, second.id}
+    assert one[caller.id]['reason'] == 'calls seed'
+    assert one[callee.id]['reason'] == 'called by seed'
+    assert one[callee.id]['confidence'] == 0.8
+    two = store.expand_neighbours([caller.id], 2, 20)
+    assert {r['entity'].id for r in two} == {seed.id, callee.id, second.id}
+    assert all((r['entity'].id != unrelated.id for r in two))
+
+def test_module_cap_preserves_semantic_neighbours(store, monkeypatch):
+    monkeypatch.setattr(config, 'MAX_MODULE_EXPANSION', 2)
+    module = entity('<module>', kind='module')
+    children = [entity(f'child{i}') for i in range(6)]
+    store.save_entities([module] + children)
+    store.save_relationships([edge(module, c, 'CONTAINS') for c in children])
+    store.save_embeddings({c.id: [1.0, float(i), 0.0] for i, c in enumerate(children)})
+    hits = store.expand_neighbours([module.id], 1, 20, [1.0, 0.0, 0.0])
+    assert [r['entity'].id for r in hits] == [children[0].id, children[1].id]
+
 def test_document_links_in_both_directions(store):
     a, b = (entity('checkout'), entity('charge'))
     d, child = (doc(), doc('Details'))
@@ -58,6 +81,22 @@ def test_document_links_in_both_directions(store):
     assert store.docs_mentioning([a.id], 10)[0][0].id == d.id
     store.clear_doc_outgoing_edges('README.md')
     assert store.docs_mentioning([a.id], 10) == []
+
+def test_shared_interfaces_and_pruning(store):
+    a, b, c = (entity('checkout'), entity('fetchCart', 'client.ts'), entity('unused'))
+    d = doc()
+    store.save_entities([a, b, c])
+    store.save_docs([d])
+    refs = [(a.id, 'route', '/cart'), (b.id, 'route', '/cart'), (d.id, 'route', '/cart'), (c.id, 'route', '/lonely')]
+    store.save_interface_refs(refs)
+    store.save_interface_refs(refs)
+    assert store.stats()['REFERENCES edges'] == 4
+    assert store.prune_noisy_interfaces(12) == 1
+    assert {r['entity'].id for r in store.entities_sharing_interfaces([a.id], 10)} == {b.id}
+    assert {r['entity'].id for r in store.entities_sharing_interfaces([d.id], 10)} == {a.id, b.id}
+    assert store.connectivity_stats()['cross_language_edges'] == 1
+    store.clear_interface_refs('client.ts')
+    assert store.entities_sharing_interfaces([a.id], 10) == []
 
 def test_keyword_cache_updates_and_safe_identifier_queries(store):
     a = entity('MAX_CART_ITEMS')

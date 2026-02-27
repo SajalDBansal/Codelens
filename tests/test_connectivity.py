@@ -1,0 +1,79 @@
+"""
+tests/test_connectivity.py
+==========================
+
+Two things that both exist because of failures nothing else could see.
+
+1. COMPONENT COUNTING - the instrument that says whether the indexer built
+   ONE graph or several. Every other number in the run summary counts work
+   that was done, and all of them read healthy while a five-language
+   repository comes out as five disconnected islands split along language
+   lines. Only this number shows that.
+
+2. CONSOLE ENCODING - the thing that stops a Windows console killing the
+   process while it prints an answer that has already been paid for.
+
+Both are tested without a database or an API key, because both are pure
+functions with the awkward parts deliberately kept out of them.
+"""
+import io
+import sys
+from graph_rag.storage.graph_store import _component_sizes
+
+def test_an_empty_graph_has_no_components():
+    assert _component_sizes({}) == []
+
+def test_entities_with_no_edges_are_each_their_own_component():
+    """
+    An isolated entity is not "part of the graph with no neighbours" - it is
+    its own island, and counting it as one is what makes the summary's
+    `connected pieces` number honest on a repo of unlinked files.
+    """
+    adjacency = {'a': set(), 'b': set(), 'c': set()}
+    assert sorted(_component_sizes(adjacency)) == [1, 1, 1]
+
+def test_a_fully_linked_graph_is_one_component():
+    adjacency = {'a': {'b'}, 'b': {'a', 'c'}, 'c': {'b'}}
+    assert _component_sizes(adjacency) == [3]
+
+def test_two_islands_are_counted_separately():
+    """
+    THE SHAPE OF THE REAL FAILURE.
+
+    This is the demo repository in miniature: a Python cluster and a Go
+    cluster, each internally well connected, with nothing joining them. The
+    edge counts look excellent and the graph is still in two pieces.
+    """
+    adjacency = {'py1': {'py2'}, 'py2': {'py1', 'py3'}, 'py3': {'py2'}, 'go1': {'go2'}, 'go2': {'go1'}}
+    assert sorted(_component_sizes(adjacency)) == [2, 3]
+
+def test_one_bridging_edge_merges_two_islands():
+    """
+    What a single working interface token is worth: the same graph as above,
+    plus one shared route, is one connected structure.
+    """
+    adjacency = {'py1': {'py2'}, 'py2': {'py1', 'py3'}, 'py3': {'py2', 'go1'}, 'go1': {'go2', 'py3'}, 'go2': {'go1'}}
+    assert _component_sizes(adjacency) == [5]
+
+def test_a_long_chain_does_not_exhaust_the_stack():
+    """
+    A chain of functions each calling the next is ordinary in real code, and
+    a recursive walk would hit Python's recursion limit somewhere around a
+    thousand of them. The traversal is iterative for this reason.
+    """
+    size = 10000
+    adjacency: dict[str, set[str]] = {}
+    for i in range(size):
+        adjacency.setdefault(f'n{i}', set())
+        if i:
+            adjacency[f'n{i}'].add(f'n{i - 1}')
+            adjacency[f'n{i - 1}'].add(f'n{i}')
+    assert _component_sizes(adjacency) == [size]
+
+def test_a_neighbour_missing_from_the_map_does_not_crash():
+    """
+    Adjacency is built from edges the database returned, and defensive code
+    here is cheap: a dangling id must not take the whole run down after the
+    indexing work has already been done.
+    """
+    assert _component_sizes({'a': {'ghost'}}) == [2]

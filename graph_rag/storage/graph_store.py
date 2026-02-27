@@ -48,6 +48,35 @@ def _chunked(items: list, size: int):
     for start in range(0, len(items), size):
         yield items[start:start + size]
 
+def _component_sizes(adjacency: dict[str, set[str]]) -> list[int]:
+    """
+    The size of every connected group in an undirected adjacency map.
+
+    Walking adjacency lists in Python keeps this calculation linear in
+    nodes plus edges. It needs no database extension and avoids enumerating
+    potentially numerous paths through the same connected component.
+
+    Iterative rather than recursive: a chain of a few thousand functions that
+    call each other is perfectly ordinary, and it would blow Python's
+    recursion limit.
+    """
+    seen: set[str] = set()
+    sizes: list[int] = []
+    for start in adjacency:
+        if start in seen:
+            continue
+        size = 0
+        stack = [start]
+        while stack:
+            node = stack.pop()
+            if node in seen:
+                continue
+            seen.add(node)
+            size += 1
+            stack.extend(adjacency.get(node, ()))
+        sizes.append(size)
+    return sizes
+
 class GraphStore:
     """
     The local LadybugDB connection, plus one method per thing we need to do.
@@ -727,6 +756,36 @@ class GraphStore:
     def doc_fulltext_search(self, question: str, top_k: int) -> list:
         return self._keyword_search('Doc', question, top_k)
 
+    def expand_neighbours(self, seed_ids: list[str], hops: int, limit: int, query_embedding: list[float] | None=None) -> list[dict]:
+        if not seed_ids or limit <= 0:
+            return []
+        if query_embedding is not None:
+            self._validate_vector(query_embedding)
+        best = {}
+        types = 'CALLS|CONTAINS|EXTENDS|USES_TYPE'
+        for hop in range(1, max(1, min(int(hops), 2)) + 1):
+            middle = '(e:CodeEntity)' if hop == 1 else f'(m:CodeEntity)-[:{types}]-(e:CodeEntity)'
+            score = '0.0'
+            if query_embedding is not None:
+                score = f'CASE WHEN e.embedding IS NULL THEN 0.0 ELSE (1.0 + array_cosine_similarity(e.embedding, CAST($vector AS FLOAT[{config.EMBEDDING_DIM}]))) / 2.0 END'
+            for outgoing in (True, False):
+                first = f'-[r:{types}]->' if outgoing else f'<-[r:{types}]-'
+                parameters = {'ids': seed_ids}
+                if query_embedding is not None:
+                    parameters['vector'] = query_embedding
+                rows = self.query(f'MATCH (seed:CodeEntity){first}{middle} WHERE seed.id IN $ids AND NOT e.id IN $ids RETURN {schema.ENTITY_RETURN_FIELDS}, seed.id AS seedId, seed.kind AS seedKind, label(r) AS relType, coalesce(r.confidence, 1.0) AS confidence, {score} AS relevance ORDER BY seedId, relType, e.id', **parameters)
+                for row in rows:
+                    best.setdefault(row['id'], dict(row, hop=hop, outgoing=outgoing))
+        kept, groups = ([], Counter())
+        for row in sorted(best.values(), key=lambda r: (-r['relevance'], r['id'])):
+            key = (row['seedId'], row['relType'])
+            if row['seedKind'] == 'module' and row['relType'] == 'CONTAINS':
+                if groups[key] >= config.MAX_MODULE_EXPANSION:
+                    continue
+                groups[key] += 1
+            kept.append(row)
+        return [{'entity': schema.record_to_entity(r), 'hop': r['hop'], 'confidence': r['confidence'], 'relevance': r['relevance'], 'rel_type': r['relType'], 'reason': _describe_connection(r['relType'], r['outgoing'], r['seedId'])} for r in sorted(kept, key=lambda r: (r['hop'], -r['relevance'], r['id']))[:limit]]
+
     def doc_vector_search(self, query_embedding: list[float], top_k: int) -> list:
         if top_k <= 0:
             return []
@@ -836,7 +895,95 @@ class GraphStore:
             for label, query in counts.items():
                 result[label] = session.run(query).single()['n']
         return result
+
+    def connectivity_stats(self) -> dict[str, int]:
+        """
+        Is this actually ONE graph, or several graphs in one database?
+
+        WHY THIS EXISTS - the failure it is built to expose
+        --------------------------------------------------
+        Every other number in the run summary counts things that were
+        CREATED, and every one of them can look healthy while the graph is
+        broken in the way that matters most. Measured on a five-language demo
+        repository: 74 entities, 21 CALLS edges, 100% edge precision, a clean
+        summary, all tests passing - and the code graph in FIVE disconnected
+        islands split exactly along language lines, with zero edges crossing
+        a language boundary.
+
+        Nothing reported that. The cross-language mechanism had silently
+        produced one node and no useful edges, and the only symptom was that
+        answers to "how do these services fit together?" were invented. A
+        single line saying `components 5 | cross-language edges 0` would have
+        made it obvious on the very first run, which is what this method is
+        for.
+
+        WHAT IS COUNTED AS A CONNECTION, AND WHY DOCS ARE COUNTED SEPARATELY
+        -------------------------------------------------------------------
+        Two entities are connected if a CALLS / CONTAINS / EXTENDS edge joins
+        them, or if they both reference the same Interface token (a shared
+        route, topic, table, env var or gRPC method) - that bridge is two
+        hops through the Interface node, so it has to be walked explicitly.
+
+        Documentation is deliberately NOT part of that count, and is reported
+        as a second number instead. A MENTIONS edge from a hand-written
+        architecture document will happily join every service in the
+        repository, so folding docs into the main figure hides exactly the
+        problem this exists to reveal: on that same demo repo the code graph
+        was in five pieces, and one README pulled it into one. Seeing both
+        numbers says whether the structure is real or whether prose is
+        carrying it - and prose goes stale, which is the failure this whole
+        system exists to prevent.
+        """
+        adjacency: dict[str, set[str]] = {}
+        language_of: dict[str, str] = {}
+
+        def link(a: str, b: str) -> None:
+            adjacency.setdefault(a, set()).add(b)
+            adjacency.setdefault(b, set()).add(a)
+        with self._session() as session:
+            for record in session.run('MATCH (e:CodeEntity) RETURN e.id AS id, e.language AS language'):
+                adjacency.setdefault(record['id'], set())
+                language_of[record['id']] = record['language'] or 'unknown'
+            direct_pairs = [(record['a'], record['b']) for record in session.run('\n                    MATCH (a:CodeEntity)-[:CALLS|CONTAINS|EXTENDS|USES_TYPE]->(b:CodeEntity)\n                    RETURN a.id AS a, b.id AS b\n                    ')]
+            bridge_pairs = [(record['a'], record['b']) for record in session.run('\n                    MATCH (a:CodeEntity)-[:REFERENCES]->(:Interface)<-[:REFERENCES]-(b:CodeEntity)\n                    WHERE a.id < b.id\n                    RETURN DISTINCT a.id AS a, b.id AS b\n                    ')]
+            doc_pairs = [(record['a'], record['b']) for record in session.run('\n                    MATCH (a:CodeEntity)<-[:MENTIONS]-(:Doc)-[:MENTIONS]->(b:CodeEntity)\n                    WHERE a.id < b.id\n                    RETURN DISTINCT a.id AS a, b.id AS b\n                    ')]
+        for a, b in direct_pairs + bridge_pairs:
+            link(a, b)
+        cross_language = 0
+        language_pairs: set[tuple[str, str]] = set()
+        for a, b in direct_pairs + bridge_pairs:
+            first = language_family(language_of.get(a)) or 'unknown'
+            second = language_family(language_of.get(b)) or 'unknown'
+            if first != second:
+                cross_language += 1
+                language_pairs.add(tuple(sorted((first, second))))
+        sizes = _component_sizes(adjacency)
+        components = len(sizes)
+        isolated = sum((1 for neighbours in adjacency.values() if not neighbours))
+        for a, b in doc_pairs:
+            link(a, b)
+        components_with_docs = len(_component_sizes(adjacency))
+        return {'entities': len(adjacency), 'languages': len({lang for lang in language_of.values()}), 'components': components, 'components_with_docs': components_with_docs, 'largest_component': max(sizes, default=0), 'isolated_entities': isolated, 'cross_language_edges': cross_language, 'language_pairs_linked': len(language_pairs)}
 _STOP_WORDS = frozenset({'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'do', 'does', 'did', 'how', 'what', 'where', 'when', 'why', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'from', 'by', 'and', 'or', 'not', 'it', 'its', 'i', 'we', 'you', 'can', 'could', 'should', 'would', 'will', 'shall', 'get', 'show', 'me', 'my', 'our', 'please', 'tell', 'about', 'does'})
+
+def _describe_connection(rel_type: str, outgoing: bool, seed_id: str) -> str:
+    """
+    Turn an edge into a short English phrase for the prompt.
+
+    Telling the LLM "this function is CALLED BY the one you matched" rather
+    than just dumping code helps it reason about direction - e.g. that a
+    change here would affect the caller, not the other way round.
+    """
+    seed_name = seed_id.split('::')[-1]
+    if rel_type == 'CALLS':
+        return f'calls {seed_name}' if not outgoing else f'called by {seed_name}'
+    if rel_type == 'CONTAINS':
+        return f'defined inside {seed_name}' if outgoing else f'contains {seed_name}'
+    if rel_type == 'EXTENDS':
+        return f'parent class of {seed_name}' if outgoing else f'extends {seed_name}'
+    if rel_type == 'USES_TYPE':
+        return f'the type used by {seed_name}' if outgoing else f'declares {seed_name} in its signature'
+    return f'connected to {seed_name}'
 
 def _search_tokens(text: str) -> list[str]:
     """Preserve complete identifiers and add camel/snake components."""
