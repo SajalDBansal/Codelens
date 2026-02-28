@@ -137,6 +137,20 @@ def resolve_reference(candidates: list[dict], source_id: str, source_language: s
             return (visible[0]['id'], 'linked')
         if len(visible) > 1:
             pool = visible
+    if len(pool) > 1 and owner_hint:
+        by_owner = [c for c in pool if c.get('ownerName') == owner_hint]
+        if not by_owner:
+            by_owner = [c for c in pool if f'::{owner_hint}.' in c['id'] or c['id'].endswith(f'::{owner_hint}')]
+        if len(by_owner) == 1 and by_owner[0]['id'] != source_id:
+            return (by_owner[0]['id'], 'receiver-type')
+        if by_owner:
+            pool = by_owner
+    if len(pool) > 1 and call_arity is not None:
+        plausible = [c for c in pool if c.get('flexibleArity') or c.get('paramCount') is None or c.get('paramCount') == call_arity]
+        if len(plausible) == 1 and plausible[0]['id'] != source_id:
+            return (plausible[0]['id'], 'arity')
+        if plausible:
+            pool = plausible
     return (None, 'ambiguous')
 
 def resolve_owner(candidates: list[dict], member_id: str, member_language: str | None) -> str | None:
@@ -179,3 +193,49 @@ def resolve_owner(candidates: list[dict], member_id: str, member_language: str |
     if len(pool) == 1:
         return pool[0]['id']
     return None
+
+def _path_proximity(doc_path: str, code_path: str) -> int:
+    """How many leading directory segments these two paths share."""
+    doc_parts = doc_path.split('/')[:-1]
+    code_parts = code_path.split('/')[:-1]
+    shared = 0
+    for left, right in zip(doc_parts, code_parts):
+        if left != right:
+            break
+        shared += 1
+    return shared
+
+def resolve_mention(candidates: list[dict], doc_path: str, max_targets: int) -> list[str]:
+    """
+    Decide which code entities a `backtick` name in a document refers to.
+
+    Returns the ids to link, which may be several - and that is the point.
+
+    WHY THIS IS NOT THE SAME RULE AS resolve_reference
+    ---------------------------------------------------
+    Calls use a strict unique-match rule because a wrong CALLS edge is a lie
+    about what the program does. A MENTIONS edge claims something much
+    weaker - "this prose talks about this code" - so the cost of an extra one
+    is a little noise in retrieval, not a false statement.
+
+    Applying the strict rule here was a disaster in practice. On a repository
+    with more than one language, `AuthService` matched 13 entities, `login`
+    matched 12, and `verify` matched 14, so the unique-match test failed every
+    single time and the whole feature produced ZERO edges. Documentation was
+    left exactly as disconnected as it would have been without a graph at all.
+
+    So instead:
+      1. Drop `module` nodes. A doc that writes `login` means the function,
+         not the whole file that happens to contain it.
+      2. Prefer the candidates living nearest the document in the directory
+         tree - docs/auth/README.md talking about `login` almost certainly
+         means the `login` in src/auth, not the one in the Lua build script.
+      3. Link up to `max_targets` of them, best first.
+    """
+    usable = [c for c in candidates if c.get('kind') != 'module']
+    if not usable:
+        usable = candidates
+    if not usable:
+        return []
+    ranked = sorted(usable, key=lambda c: (-_path_proximity(doc_path, c.get('filePath') or ''), c['id']))
+    return [c['id'] for c in ranked[:max_targets]]

@@ -13,7 +13,7 @@ Each test names the failure it exists to prevent.
 from graph_rag import config
 from graph_rag.models import CodeEntity, RetrievedEntity
 from graph_rag.parsing.doc_parser import _split_large_text
-from graph_rag.pipeline.indexer import resolve_reference
+from graph_rag.pipeline.indexer import resolve_mention, resolve_reference
 from graph_rag.storage.graph_store import reciprocal_rank_fusion
 
 def test_a_file_with_no_blank_lines_still_splits():
@@ -94,6 +94,39 @@ def test_a_name_only_found_in_another_language_is_external_not_ambiguous():
 
 def _candidate(entity_id, path, kind='function'):
     return {'id': entity_id, 'language': 'python', 'filePath': path, 'kind': kind}
+
+def test_mentions_link_even_when_the_name_is_not_unique():
+    """
+    THE REGRESSION THIS FILE EXISTS FOR.
+
+    Mentions used to require a unique match, exactly like calls. On any
+    repository with more than one language that test never passed - `login`
+    matched 12 entities, `AuthService` 13 - so the feature produced ZERO
+    edges and documentation stayed completely disconnected from the code.
+    """
+    candidates = [_candidate('src/auth/app.py::login', 'src/auth/app.py'), _candidate('src/api.ts::login', 'src/api.ts'), _candidate('build/init.lua::login', 'build/init.lua')]
+    linked = resolve_mention(candidates, 'src/auth/README.md', max_targets=3)
+    assert linked, 'a name shared across languages must still link somewhere'
+    assert linked[0] == 'src/auth/app.py::login'
+
+def test_mentions_prefer_the_nearest_code_in_the_tree():
+    candidates = [_candidate('far/away/thing.py::helper', 'far/away/thing.py'), _candidate('docs/api/impl.py::helper', 'docs/api/impl.py')]
+    linked = resolve_mention(candidates, 'docs/api/README.md', max_targets=1)
+    assert linked == ['docs/api/impl.py::helper']
+
+def test_mentions_never_point_at_a_module_node():
+    """
+    A doc writing `login` means the function, not the whole file that happens
+    to contain it - a module node is a grab-bag and makes a poor target.
+    """
+    candidates = [_candidate('src/app.py::<module>', 'src/app.py', kind='module'), _candidate('src/app.py::login', 'src/app.py')]
+    linked = resolve_mention(candidates, 'README.md', max_targets=3)
+    assert linked == ['src/app.py::login']
+
+def test_mentions_are_capped():
+    candidates = [_candidate(f'f{i}.py::run', f'f{i}.py') for i in range(20)]
+    linked = resolve_mention(candidates, 'README.md', max_targets=3)
+    assert len(linked) == 3
 
 def _entity(entity_id, code):
     return CodeEntity(id=entity_id, kind='function', name=entity_id.split('::')[-1], file_path=entity_id.split('::')[0], language='python', start_line=1, end_line=2, code=code, content_hash='h')
