@@ -13,6 +13,7 @@ Each test names the failure it exists to prevent.
 from graph_rag import config
 from graph_rag.models import CodeEntity, RetrievedEntity
 from graph_rag.parsing.doc_parser import _split_large_text
+from graph_rag.pipeline.indexer import resolve_reference
 from graph_rag.storage.graph_store import reciprocal_rank_fusion
 
 def test_a_file_with_no_blank_lines_still_splits():
@@ -60,6 +61,36 @@ def test_a_blank_line_is_not_a_break_point_when_it_is_too_early():
     text = '# Title\n\n' + 'prose that goes on and on. ' * 400
     chunks = _split_large_text(text, start_line=1, max_chars=2000)
     assert len(chunks[0][0]) > 100, 'first chunk is a stub, not real content'
+
+def test_a_call_never_resolves_to_a_constant():
+    """
+    Once constants became entities, `some_dict.items()` reduced to the bare
+    name `items` and matched a dataclass field called `items`, producing a
+    CALLS edge pointing at a variable. Calls land on callable things.
+    """
+    candidates = [{'id': 'retriever.py::items', 'language': 'python', 'filePath': 'retriever.py', 'kind': 'constant'}]
+    target, reason = resolve_reference(candidates, 'indexer.py::run', 'python')
+    assert target is None
+    assert reason == 'external'
+
+def test_a_call_may_resolve_to_a_class():
+    """Calling a class is how most languages spell "construct one"."""
+    candidates = [{'id': 'models.py::Relationship', 'language': 'python', 'filePath': 'models.py', 'kind': 'class'}]
+    target, reason = resolve_reference(candidates, 'indexer.py::run', 'python')
+    assert reason == 'linked'
+    assert target == 'models.py::Relationship'
+
+def test_a_name_only_found_in_another_language_is_external_not_ambiguous():
+    """
+    A Python file calling `login` when the only `login` in the graph is
+    TypeScript is calling something OUTSIDE the graph. Reporting that as
+    "ambiguous" inflated the headline "real missed edges" figure with cases
+    that were nothing of the kind.
+    """
+    candidates = [{'id': 'api.ts::login', 'language': 'typescript', 'filePath': 'api.ts', 'kind': 'function'}]
+    target, reason = resolve_reference(candidates, 'app.py::verify', 'python')
+    assert target is None
+    assert reason == 'external'
 
 def _candidate(entity_id, path, kind='function'):
     return {'id': entity_id, 'language': 'python', 'filePath': path, 'kind': kind}

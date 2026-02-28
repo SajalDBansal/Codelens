@@ -15,8 +15,15 @@ error, and a Go method came out as a free function so its type had no methods
 at all in the graph. Neither failure raised anything, which is why they are
 pinned here.
 """
+
 import pytest
+
 from graph_rag.parsing import parse_file, prefer_by_scope
+from graph_rag.pipeline import resolve_owner, resolve_reference
+
+# ---------------------------------------------------------------------------
+# prefer_by_scope
+# ---------------------------------------------------------------------------
 
 def test_a_caller_prefers_the_helper_it_contains():
     """
@@ -26,14 +33,21 @@ def test_a_caller_prefers_the_helper_it_contains():
     `walk`. When `collect_folder_hashes` calls `walk` it can only mean its
     own, but the unique-match rule saw six candidates and gave up.
     """
-    candidates = ['merkle.py::collect_folder_hashes.walk', 'merkle.py::collect_file_hashes.walk', 'merkle.py::diff_against_stored.walk', 'parser.py::_collect_calls.walk']
-    chosen = prefer_by_scope(candidates, 'merkle.py::collect_folder_hashes')
-    assert chosen == 'merkle.py::collect_folder_hashes.walk'
+    candidates = [
+        "merkle.py::collect_folder_hashes.walk",
+        "merkle.py::collect_file_hashes.walk",
+        "merkle.py::diff_against_stored.walk",
+        "parser.py::_collect_calls.walk",
+    ]
+    chosen = prefer_by_scope(candidates, "merkle.py::collect_folder_hashes")
+    assert chosen == "merkle.py::collect_folder_hashes.walk"
+
 
 def test_a_sibling_in_the_same_scope_wins():
     """Two methods of one class refer to each other, not to a distant twin."""
-    candidates = ['a.py::Service.save', 'b.py::Other.save']
-    assert prefer_by_scope(candidates, 'a.py::Service.load') == 'a.py::Service.save'
+    candidates = ["a.py::Service.save", "b.py::Other.save"]
+    assert prefer_by_scope(candidates, "a.py::Service.load") == "a.py::Service.save"
+
 
 def test_recursion_is_reported_as_the_caller_itself():
     """
@@ -43,8 +57,9 @@ def test_recursion_is_reported_as_the_caller_itself():
     a property rather than creating a self-loop that every traversal would
     then have to step around.
     """
-    candidates = ['m.py::build.recurse']
-    assert prefer_by_scope(candidates, 'm.py::build.recurse') == 'm.py::build.recurse'
+    candidates = ["m.py::build.recurse"]
+    assert prefer_by_scope(candidates, "m.py::build.recurse") == "m.py::build.recurse"
+
 
 def test_scope_stays_silent_when_it_has_nothing_to_say():
     """
@@ -52,20 +67,67 @@ def test_scope_stays_silent_when_it_has_nothing_to_say():
     None so the later rules (imports, uniqueness) get their turn, rather than
     inventing a preference it cannot justify.
     """
-    candidates = ['x.py::save', 'y.py::save']
-    assert prefer_by_scope(candidates, 'z.py::caller') is None
+    candidates = ["x.py::save", "y.py::save"]
+    assert prefer_by_scope(candidates, "z.py::caller") is None
+
 
 def test_scope_never_crosses_a_file():
     """Containment is a within-file fact; a same-named nest elsewhere is not it."""
-    candidates = ['other.py::caller.walk']
-    assert prefer_by_scope(candidates, 'mine.py::caller') is None
-GO_SOURCE = 'package main\n\ntype Engine struct {\n\trules []int\n}\n\n// Apply runs every rule.\nfunc (e *Engine) Apply(base int) int {\n\treturn helper(base)\n}\n\nfunc helper(x int) int { return x }\n'
+    candidates = ["other.py::caller.walk"]
+    assert prefer_by_scope(candidates, "mine.py::caller") is None
+
+
+def test_resolve_reference_uses_scope_before_giving_up():
+    """The cross-file resolver has to agree with the in-file one."""
+    candidates = [
+        {"id": "m.py::outer.helper", "language": "python", "filePath": "m.py",
+         "kind": "function"},
+        {"id": "m.py::other.helper", "language": "python", "filePath": "m.py",
+         "kind": "function"},
+    ]
+    target, reason = resolve_reference(candidates, "m.py::outer", "python")
+    assert reason == "linked"
+    assert target == "m.py::outer.helper"
+
+
+def test_resolve_reference_reports_recursion_separately():
+    """
+    Recursion must not be counted as a missed edge, or the "real misses"
+    number - the one people act on - is inflated by ordinary recursive code.
+    """
+    candidates = [
+        {"id": "m.py::f", "language": "python", "filePath": "m.py", "kind": "function"},
+        {"id": "n.py::f", "language": "python", "filePath": "n.py", "kind": "function"},
+    ]
+    _, reason = resolve_reference(candidates, "m.py::f", "python")
+    assert reason == "recursive"
+
+
+# ---------------------------------------------------------------------------
+# Go receivers
+# ---------------------------------------------------------------------------
+
+GO_SOURCE = '''package main
+
+type Engine struct {
+	rules []int
+}
+
+// Apply runs every rule.
+func (e *Engine) Apply(base int) int {
+	return helper(base)
+}
+
+func helper(x int) int { return x }
+'''
+
 
 @pytest.fixture
 def parsed_go(tmp_path):
-    path = tmp_path / 'engine.go'
-    path.write_text(GO_SOURCE, encoding='utf-8')
-    return parse_file(path, 'engine.go')
+    path = tmp_path / "engine.go"
+    path.write_text(GO_SOURCE, encoding="utf-8")
+    return parse_file(path, "engine.go")
+
 
 def test_a_go_method_is_a_method_not_a_function(parsed_go):
     """
@@ -73,28 +135,54 @@ def test_a_go_method_is_a_method_not_a_function(parsed_go):
     come out as a free function and `Engine` had no methods in the graph at
     all. "What methods does Engine have?" was simply not answerable.
     """
-    apply = next((e for e in parsed_go.entities if e.name == 'Apply'))
-    assert apply.kind == 'method'
-    assert apply.owner_name == 'Engine'
-    assert apply.id == 'engine.go::Engine.Apply'
+    apply = next(e for e in parsed_go.entities if e.name == "Apply")
+    assert apply.kind == "method"
+    assert apply.owner_name == "Engine"
+    assert apply.id == "engine.go::Engine.Apply"
+
 
 def test_a_go_method_hangs_off_its_type(parsed_go):
     """The edge itself, not just the label."""
-    edges = {(r.source_id, r.target_id) for r in parsed_go.relationships if r.kind == 'CONTAINS'}
-    assert ('engine.go::Engine', 'engine.go::Engine.Apply') in edges
+    edges = {
+        (r.source_id, r.target_id)
+        for r in parsed_go.relationships if r.kind == "CONTAINS"
+    }
+    assert ("engine.go::Engine", "engine.go::Engine.Apply") in edges
+
 
 def test_a_receiverless_go_function_stays_a_function(parsed_go):
     """The rule must not swallow ordinary package-level functions."""
-    helper = next((e for e in parsed_go.entities if e.name == 'helper'))
-    assert helper.kind == 'function'
+    helper = next(e for e in parsed_go.entities if e.name == "helper")
+    assert helper.kind == "function"
     assert helper.owner_name is None
-RUST_SOURCE = 'pub struct LineItem {\n    pub cents: u64,\n}\n\npub trait Priced {\n    fn total(&self) -> u64;\n}\n\nimpl Priced for LineItem {\n    fn total(&self) -> u64 {\n        self.cents\n    }\n}\n'
+
+
+# ---------------------------------------------------------------------------
+# Rust impl blocks and traits
+# ---------------------------------------------------------------------------
+
+RUST_SOURCE = '''pub struct LineItem {
+    pub cents: u64,
+}
+
+pub trait Priced {
+    fn total(&self) -> u64;
+}
+
+impl Priced for LineItem {
+    fn total(&self) -> u64 {
+        self.cents
+    }
+}
+'''
+
 
 @pytest.fixture
 def parsed_rust(tmp_path):
-    path = tmp_path / 'lib.rs'
-    path.write_text(RUST_SOURCE, encoding='utf-8')
-    return parse_file(path, 'lib.rs')
+    path = tmp_path / "lib.rs"
+    path.write_text(RUST_SOURCE, encoding="utf-8")
+    return parse_file(path, "lib.rs")
+
 
 def test_a_rust_impl_is_joined_to_its_struct(parsed_rust):
     """
@@ -102,8 +190,12 @@ def test_a_rust_impl_is_joined_to_its_struct(parsed_rust):
     nothing connected them - so the struct was an isolated node whose methods
     lived somewhere the graph could not reach from it.
     """
-    edges = {(r.source_id, r.target_id) for r in parsed_rust.relationships if r.kind == 'CONTAINS'}
-    assert ('lib.rs::LineItem', 'lib.rs::LineItem~impl_item') in edges
+    edges = {
+        (r.source_id, r.target_id)
+        for r in parsed_rust.relationships if r.kind == "CONTAINS"
+    }
+    assert ("lib.rs::LineItem", "lib.rs::LineItem~impl_item") in edges
+
 
 def test_a_rust_trait_implementation_is_an_edge(parsed_rust):
     """
@@ -111,8 +203,52 @@ def test_a_rust_trait_implementation_is_an_edge(parsed_rust):
     parsed and then left with nothing pointing at it, so "what implements
     Priced?" had no answer.
     """
-    extends = {(r.source_id, r.target_id) for r in parsed_rust.relationships if r.kind == 'EXTENDS'}
-    assert ('lib.rs::LineItem~impl_item', 'lib.rs::Priced') in extends
+    extends = {
+        (r.source_id, r.target_id)
+        for r in parsed_rust.relationships if r.kind == "EXTENDS"
+    }
+    assert ("lib.rs::LineItem~impl_item", "lib.rs::Priced") in extends
+
+
+# ---------------------------------------------------------------------------
+# resolve_owner - the cross-file half
+# ---------------------------------------------------------------------------
+
+def test_owner_resolution_prefers_the_same_file():
+    candidates = [
+        {"id": "a.go::Engine", "language": "go", "filePath": "a.go", "kind": "class"},
+        {"id": "b.go::Engine", "language": "go", "filePath": "b.go", "kind": "class"},
+    ]
+    assert resolve_owner(candidates, "a.go::Engine.Apply", "go") == "a.go::Engine"
+
+
+def test_owner_resolution_ignores_impl_blocks_and_itself():
+    """
+    In Rust the impl block carries its type's name, so an unfiltered lookup
+    links it to itself and leaves the struct as disconnected as before.
+    """
+    candidates = [
+        {"id": "lib.rs::LineItem~impl_item", "language": "rust",
+         "filePath": "lib.rs", "kind": "impl"},
+        {"id": "lib.rs::LineItem", "language": "rust",
+         "filePath": "lib.rs", "kind": "class"},
+    ]
+    chosen = resolve_owner(candidates, "lib.rs::LineItem~impl_item", "rust")
+    assert chosen == "lib.rs::LineItem"
+
+
+def test_owner_resolution_will_not_guess_across_languages():
+    """A Go `Engine` and a TypeScript `Engine` are unrelated words."""
+    candidates = [
+        {"id": "engine.ts::Engine", "language": "typescript",
+         "filePath": "engine.ts", "kind": "class"},
+    ]
+    assert resolve_owner(candidates, "pricing.go::Engine.Apply", "go") is None
+
+
+# ---------------------------------------------------------------------------
+# The orphan fix
+# ---------------------------------------------------------------------------
 
 def test_a_file_of_pure_definitions_still_gets_a_module_node(tmp_path):
     """
@@ -125,15 +261,18 @@ def test_a_file_of_pure_definitions_still_gets_a_module_node(tmp_path):
     file's definitions were reachable by a direct vector hit and by nothing
     else.
     """
-    source = 'export function a() { return 1; }\nexport function b() { return 2; }\n'
-    path = tmp_path / 'pure.ts'
-    path.write_text(source, encoding='utf-8')
-    parsed = parse_file(path, 'pure.ts')
-    module = next((e for e in parsed.entities if e.kind == 'module'), None)
-    assert module is not None, 'a file of pure definitions still needs an anchor'
-    contained = {r.target_id for r in parsed.relationships if r.kind == 'CONTAINS'}
-    assert 'pure.ts::a' in contained
-    assert 'pure.ts::b' in contained
+    source = "export function a() { return 1; }\nexport function b() { return 2; }\n"
+    path = tmp_path / "pure.ts"
+    path.write_text(source, encoding="utf-8")
+    parsed = parse_file(path, "pure.ts")
+
+    module = next((e for e in parsed.entities if e.kind == "module"), None)
+    assert module is not None, "a file of pure definitions still needs an anchor"
+
+    contained = {r.target_id for r in parsed.relationships if r.kind == "CONTAINS"}
+    assert "pure.ts::a" in contained
+    assert "pure.ts::b" in contained
+
 
 def test_the_outline_does_not_change_when_a_body_changes(tmp_path):
     """
@@ -141,10 +280,12 @@ def test_the_outline_does_not_change_when_a_body_changes(tmp_path):
     inside of a function must not change this node's hash and force a
     needless re-embed - the exact cost the Merkle design exists to avoid.
     """
-    first = tmp_path / 'one.ts'
-    first.write_text('export function a() { return 1; }\n', encoding='utf-8')
-    before = next((e for e in parse_file(first, 'x.ts').entities if e.kind == 'module'))
-    second = tmp_path / 'two.ts'
-    second.write_text('export function a() { return 999; }\n', encoding='utf-8')
-    after = next((e for e in parse_file(second, 'x.ts').entities if e.kind == 'module'))
+    first = tmp_path / "one.ts"
+    first.write_text("export function a() { return 1; }\n", encoding="utf-8")
+    before = next(e for e in parse_file(first, "x.ts").entities if e.kind == "module")
+
+    second = tmp_path / "two.ts"
+    second.write_text("export function a() { return 999; }\n", encoding="utf-8")
+    after = next(e for e in parse_file(second, "x.ts").entities if e.kind == "module")
+
     assert before.content_hash == after.content_hash
