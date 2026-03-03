@@ -18,6 +18,7 @@ functions with the awkward parts deliberately kept out of them.
 """
 import io
 import sys
+from graph_rag.pipeline.indexer import should_reuse_block
 from graph_rag.storage.graph_store import _component_sizes
 
 def test_an_empty_graph_has_no_components():
@@ -77,3 +78,32 @@ def test_a_neighbour_missing_from_the_map_does_not_crash():
     indexing work has already been done.
     """
     assert _component_sizes({'a': {'ghost'}}) == [2]
+
+def test_an_unchanged_block_with_a_vector_is_reused():
+    """
+    The whole point of the block-level Merkle hash. Editing a comment at the
+    top of a file shifts every line below it without changing one function's
+    text, and paying to re-embed all of them is the cost this avoids.
+    """
+    assert should_reuse_block('abc123', 'abc123', force=False) is True
+
+def test_a_changed_block_is_re_embedded():
+    assert should_reuse_block('abc123', 'def456', force=False) is False
+
+def test_a_block_with_no_stored_vector_is_embedded():
+    """
+    `None` means either "new node" or "node exists but has no vector". Both
+    collapse to the same answer: there is nothing to reuse. Treating the
+    second as reusable would leave the entity permanently unsearchable while
+    the summary cheerfully reported it as reused.
+    """
+    assert should_reuse_block(None, 'abc123', force=False) is False
+
+def test_force_distrusts_a_matching_hash():
+    """
+    `--force` is the repair for a changed parser or a changed embedding
+    model, where the stored vector is stale even though the source text is
+    byte-for-byte identical. If a matching hash could still win here, the
+    flag would silently not do the one job it exists for.
+    """
+    assert should_reuse_block('abc123', 'abc123', force=True) is False

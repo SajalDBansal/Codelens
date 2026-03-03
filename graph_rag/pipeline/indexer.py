@@ -87,6 +87,35 @@ def _parent_folder(path: str) -> str | None:
 RESOLUTION_CONFIDENCE: dict[str, float] = {'same-file': 1.0, 'linked': 0.95, 'receiver-type': 0.8, 'arity': 0.6, 'type-reference': 0.9}
 LINKED_REASONS = frozenset({'linked', 'receiver-type', 'arity'})
 
+def should_reuse_block(stored_hash: str | None, content_hash: str, force: bool) -> bool:
+    """
+    Can we skip paying to embed this block?
+
+    `stored_hash` is what GraphStore.get_entity_hashes_for_files returned:
+    the embedding-input hash if the node has a valid vector, and None if
+    the node is new OR exists without one. Those two cases collapse into one
+    here on purpose - both mean "there is no vector to reuse".
+
+    WHY THIS IS A FUNCTION AND NOT FOUR LINES INLINE
+    -----------------------------------------------
+    It is the decision that spends money. Getting it wrong in the safe
+    direction re-embeds unchanged code on every run; getting it wrong in the
+    unsafe direction leaves a stale vector pointing at code that has changed,
+    so retrieval quietly matches text that is no longer there.
+
+    Neither failure raises, and neither shows up in any other number - the
+    run summary reports what it decided, not whether the decision was right.
+    Inline, it could only be exercised by running a real indexing pass
+    against a real database, which is exactly the kind of check that does not
+    get written. As a plain function it is four unit tests. Same reasoning as
+    resolve_reference.
+    """
+    if force:
+        return False
+    if stored_hash is None:
+        return False
+    return stored_hash == content_hash
+
 def resolve_reference(candidates: list[dict], source_id: str, source_language: str | None, visible_paths: set[str] | None=None, owner_hint: str | None=None, call_arity: int | None=None, allowed_kinds: frozenset[str] | None=None) -> tuple[str | None, str]:
     """
     Decide which entity a call by NAME actually refers to.
@@ -368,7 +397,7 @@ def run_indexing(repo_path: Path, force: bool=False, verbose: bool=True, db_path
                 stored_block_hashes = stored_blocks_by_file.get(file_path, {})
                 changed_blocks: list[CodeEntity] = []
                 for entity in parsed.entities:
-                    if False:
+                    if should_reuse_block(stored_block_hashes.get(entity.id), embedding_fingerprint(build_embedding_text(entity)), force):
                         report.blocks_reused += 1
                     else:
                         changed_blocks.append(entity)
@@ -397,7 +426,7 @@ def run_indexing(repo_path: Path, force: bool=False, verbose: bool=True, db_path
                 changed_chunks: list[DocChunk] = []
                 for chunk in parsed.chunks:
                     stored = stored_chunk_hashes.get(chunk.id)
-                    hash_matches = False
+                    hash_matches = not force and stored is not None and (stored == embedding_fingerprint(build_doc_embedding_text(chunk)))
                     has_vector = stored is not None
                     if hash_matches and has_vector:
                         report.doc_chunks_reused += 1

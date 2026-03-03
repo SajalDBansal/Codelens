@@ -51,6 +51,45 @@ def repo(tmp_path):
 def edit(path: Path):
     path.write_text(path.read_text(encoding='utf-8').replace('return 1', 'return 10'), encoding='utf-8')
 
+@pytest.mark.parametrize('kind', ['code', 'docs'])
+def test_failed_embedding_cannot_reuse_the_previous_vector(database, repo, monkeypatch, kind):
+    indexer.run_indexing(repo, verbose=False)
+    if kind == 'code':
+        edit(repo / 'src/a.py')
+        method = 'embed_entities'
+    else:
+        (repo / 'README.md').write_text('# Demo\nChanged documentation for `alpha`.\n', encoding='utf-8')
+        method = 'embed_docs'
+
+    def fail(self, items):
+        raise RuntimeError('simulated embedding outage')
+    with monkeypatch.context() as patch:
+        patch.setattr(FakeEmbedder, method, fail)
+        with pytest.raises(RuntimeError, match='simulated embedding outage'):
+            indexer.run_indexing(repo, verbose=False)
+    retry = indexer.run_indexing(repo, verbose=False)
+    count = retry.blocks_embedded if kind == 'code' else retry.doc_chunks_embedded
+    assert count > 0, 'a changed block must get a replacement vector on retry'
+
+@pytest.mark.parametrize('force', [False, True])
+def test_failed_parse_is_visible_and_retried(database, repo, monkeypatch, force):
+    if force:
+        indexer.run_indexing(repo, verbose=False)
+    original = indexer.parse_file
+
+    def fail(path, relative):
+        if relative == 'src/a.py':
+            raise ValueError('simulated parser failure')
+        return original(path, relative)
+    with monkeypatch.context() as patch:
+        patch.setattr(indexer, 'parse_file', fail)
+        report = indexer.run_indexing(repo, force=force, verbose=False)
+    hashes = collect_file_hashes(build_merkle_tree(repo))
+    assert database.get_file_hashes().get('src/a.py') != hashes['src/a.py']
+    assert 'src/a.py' in report.failed_files
+    assert indexer.run_indexing(repo, verbose=False).files_changed == 1
+    assert database.get_file_hashes()['src/a.py'] == hashes['src/a.py']
+
 def summary_text(database):
     with database._session() as session:
         row = session.run("MATCH (s:Summary {path: 'src'}) RETURN s.text AS text").single()
