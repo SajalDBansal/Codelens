@@ -128,5 +128,21 @@ def test_mentions_are_capped():
     linked = resolve_mention(candidates, 'README.md', max_targets=3)
     assert len(linked) == 3
 
+def test_fusion_rewards_agreement_between_the_two_searches():
+    """
+    An item both searches liked must beat one only a single search liked,
+    whatever the raw scores said - that is the entire point of fusing on
+    rank rather than trying to normalise incomparable scores.
+    """
+    vector = ['only_vector', 'both']
+    keyword = ['only_keyword', 'both']
+    scores = reciprocal_rank_fusion([vector, keyword])
+    assert scores['both'] > scores['only_vector']
+    assert scores['both'] > scores['only_keyword']
+
+def test_fusion_weights_shift_the_balance():
+    scores = reciprocal_rank_fusion([['a'], ['b']], weights=[3.0, 1.0])
+    assert scores['a'] > scores['b']
+
 def _entity(entity_id, code):
     return CodeEntity(id=entity_id, kind='function', name=entity_id.split('::')[-1], file_path=entity_id.split('::')[0], language='python', start_line=1, end_line=2, code=code, content_hash='h')
