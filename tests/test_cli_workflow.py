@@ -4,7 +4,7 @@ import sys
 from types import SimpleNamespace
 import pytest
 from graph_rag import config
-from graph_rag.cli import projects, settings, state
+from graph_rag.cli import ask_command, index_command, projects, settings, state
 from graph_rag.embedding import embedder
 from graph_rag.generation.model_options import sampling_options
 from graph_rag.pipeline import indexer
