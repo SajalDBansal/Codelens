@@ -4,7 +4,7 @@ import sys
 from types import SimpleNamespace
 import pytest
 from graph_rag import config
-from graph_rag.cli import settings, state
+from graph_rag.cli import projects, settings, state
 from graph_rag.embedding import embedder
 from graph_rag.generation.model_options import sampling_options
 from graph_rag.pipeline import indexer
@@ -92,6 +92,18 @@ def test_atomic_write_preserves_previous_document(configured, monkeypatch):
         settings.save_settings(settings.Settings())
     assert path.read_bytes() == before
     assert not list(state.home().glob('*.tmp'))
+
+def test_readonly_inspection_does_not_create_database(tmp_path):
+    missing = tmp_path / 'missing' / 'graph.lbug'
+    with pytest.raises(FileNotFoundError):
+        GraphStore(missing, read_only=True)
+    assert not missing.parent.exists()
+
+def test_registry_lock_prevents_overwrite(repo):
+    first = projects.add_project(repo)
+    with state.locked(state.home() / '.state.lock'), pytest.raises(state.StateError, match='Another command'):
+        projects.remember(first, active=True)
+    assert projects.registry().projects[0].id == first.id
 
 def test_scoped_settings_restore_after_exception(configured):
     original = (config.EMBEDDING_MODEL, config.EMBEDDING_DIM, config.CHAT_MODEL)
