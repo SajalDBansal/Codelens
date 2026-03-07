@@ -3,7 +3,95 @@
 # This file tells Python how to install the project.
 #
 # The distribution is named `codelens`; the Python import remains `graph_rag`.
-# [tool.setuptools.packages.find]
+# [project.scripts] installs the `codelens` command and the legacy aliases.
+#
+# Install it with:      pip install -e .
+# The "-e" means "editable": Python points at these source files directly, so
+# your edits take effect immediately without reinstalling.
+
+[build-system]
+# The tooling used to build the package. setuptools is the standard choice.
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codelens"
+version = "0.1.0"
+description = "Local Graph RAG for codebases: index code, retrieve evidence, and ask questions with OpenAI"
+readme = {file = "README.md", content-type = "text/markdown"}
+# The Windows Ladybug wheel fails to load with the tested standard Python 3.14.
+# See docs/compatibility-and-ci.md before extending this range.
+requires-python = ">=3.11,<3.14"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "SajalDBansal"}]
+keywords = [
+    "rag",
+    "graph-rag",
+    "code-search",
+    "codebase",
+    "retrieval-augmented-generation",
+    "ladybugdb",
+    "openai",
+    "cli",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Processing :: Indexing",
+]
+
+dependencies = [
+    # Embedded graph storage: no server or Docker. Pinned disk format/runtime.
+    "ladybug==0.21.2",
+
+    # Parses source code into syntax trees.
+    "tree-sitter>=0.26.0,<0.27",
+    # The MAINTAINED grammar bundle. Do NOT swap this for
+    # `tree-sitter-languages` (no "-pack"): that package is abandoned and
+    # does not build on Python 3.12+.
+    "tree-sitter-language-pack>=1.22.1,<2",
+
+    # The OpenAI / ChatGPT SDK - used for BOTH embeddings and the chat call.
+    "openai>=3.35.1,<4",
+
+    # Typed data models, so a wrong field shape fails loudly and immediately.
+    "pydantic>=2.14.1,<3",
+
+
+    # API keys in the OS credential store; cross-process local command locks.
+    "keyring>=25.7.0,<26",
+    "filelock>=3.32.7,<4",
+
+    # Declarative commands, formatted help, and editable prompt defaults.
+    "typer>=0.27.3,<0.28",
+    "rich>=14.3.4,<15",
+    "prompt-toolkit>=3.0.53,<4",
+]
+
+[project.optional-dependencies]
+# Install with:  pip install -e ".[dev]"
+dev = [
+    "pytest>=9.1.1,<10",
+    "ruff>=0.17.1,<0.18",
+]
+
+
+# ---------------------------------------------------------------------------
+# CLI ENTRY POINTS
+# ---------------------------------------------------------------------------
+# Format is:  command-name = "python.module.path:function_name"
+# After `pip install -e .` these become real terminal commands.
+[project.scripts]
+codelens = "graph_rag.cli.app:main"
+
+[tool.setuptools.packages.find]
 # Ship the `graph_rag` package and its sub-packages; ignore everything else.
 include = ["graph_rag*"]
 

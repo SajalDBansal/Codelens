@@ -4,7 +4,7 @@ import sys
 from types import SimpleNamespace
 import pytest
 from graph_rag import config
-from graph_rag.cli import ask_command, index_command, projects, settings, state
+from graph_rag.cli import app, ask_command, config_commands, index_command, projects, settings, state
 from graph_rag.embedding import embedder
 from graph_rag.generation.model_options import sampling_options
 from graph_rag.pipeline import indexer
@@ -98,6 +98,11 @@ def test_readonly_inspection_does_not_create_database(tmp_path):
     with pytest.raises(FileNotFoundError):
         GraphStore(missing, read_only=True)
     assert not missing.parent.exists()
+
+def test_model_access_check_only_lists_ids(configured, monkeypatch, capsys):
+    monkeypatch.setattr(app, 'available_models', lambda cfg: {cfg.embedding_model, cfg.reasoning_model})
+    app.main(['config', 'check'])
+    assert 'billing were not tested' in ' '.join(capsys.readouterr().out.split())
 
 def test_registry_lock_prevents_overwrite(repo):
     first = projects.add_project(repo)
