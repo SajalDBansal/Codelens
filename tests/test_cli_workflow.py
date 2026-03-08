@@ -100,6 +100,24 @@ def test_config_validation_and_model_defaults(configured):
         app.main(['config', 'set', '--reasoning-model', 'text-embedding-3-small'])
     assert settings.load_settings().embedding_dimensions == 3072
 
+def test_duplicate_project_names_require_id(repo, tmp_path):
+    projects.add_project(repo, name='demo')
+    second = tmp_path / 'second'
+    second.mkdir()
+    projects.add_project(second, name='demo')
+    with pytest.raises(state.StateError, match='ambiguous'):
+        projects.entry_for('demo')
+
+def test_registry_detects_missing_source_and_does_not_recreate_it(repo, capsys):
+    project = projects.add_project(repo)
+    moved = repo.with_name('moved')
+    repo.rename(moved)
+    app.main(['projects', 'list'])
+    assert 'source unavailable' in capsys.readouterr().out
+    with pytest.raises(SystemExit, match='No project metadata'):
+        app.main(['status', '--project', project.id])
+    assert not repo.exists()
+
 def test_corrupt_state_is_not_overwritten(configured):
     file = state.home() / 'config.json'
     file.write_text('{broken', encoding='utf-8')

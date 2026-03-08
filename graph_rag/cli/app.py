@@ -15,6 +15,7 @@ from .state import StateError, config_directory, home
 app = typer.Typer(help='Local codebase graphs and OpenAI RAG. Start with codelens init.', no_args_is_help=True, pretty_exceptions_enable=False, rich_markup_mode='rich')
 app.add_typer(config_commands.app, name='config', rich_help_panel='Setup')
 projects_app = typer.Typer(help='Register, find and select local projects.', no_args_is_help=True)
+app.add_typer(projects_app, name='projects', rich_help_panel='Projects')
 
 class ModelChange(str, Enum):
     keep = 'keep'
@@ -70,6 +71,51 @@ def models(available: Annotated[bool, typer.Option('--available', help='List IDs
         print('\n'.join(sorted(available_models(require_settings()))))
     else:
         show({'embedding_models_and_default_dimensions': EMBEDDING_MODELS, 'answer_model_suggestions': REASONING_MODELS, 'note': 'Custom answer models must support Chat Completions with text input/output. Availability depends on your account.'})
+
+def project_status(project):
+    show({**project.model_dump(), 'database_path': str(project.database), 'stored_embedding': inspect_database(project.database), 'freshness': 'Source checked at last_indexed_at; ask/retrieve recheck by default.'})
+
+@projects_app.command('list')
+def list_projects(search: Annotated[str, typer.Argument(help='Optional name, ID, or path filter.')]=''):
+    """List registered projects; * marks the selected default."""
+    data = registry()
+    for item in data.projects:
+        if search.casefold() not in f'{item.id} {item.name} {item.root}'.casefold():
+            continue
+        marker = '*' if item.id == data.active_project_id else ' '
+        available = 'available' if Path(item.root).is_dir() else 'source unavailable'
+        print(f'{marker} {item.id}  {item.name}  [{available}]  {item.root}')
+    if not data.projects:
+        print('No registered projects. Run codelens embed PATH.')
+
+@projects_app.command('add')
+def register_project(path: Path, name: Annotated[str | None, typer.Option(help='Optional display name.')]=None, db: Database=None):
+    """Register a project location without calling OpenAI."""
+    project = add_project(path, name=name, db=db)
+    print(f'Registered {project.name}: {project.id}')
+
+@projects_app.command('use')
+def use_project(project: str):
+    """Choose the default project used outside another project directory."""
+    selected = load_project(Path(entry_for(project).root))
+    remember(selected, active=True)
+    print(f'Selected {selected.name} ({selected.id}) as the default outside another project.')
+
+@projects_app.command('show')
+def show_project(project: str):
+    """Show project metadata and the stored embedding profile."""
+    project_status(load_project(Path(entry_for(project).root)))
+
+@projects_app.command('remove')
+def remove_project(project: str):
+    """Unregister only; retain project metadata and graph files."""
+    forget(project)
+    print('Removed from the registry. Project metadata and graph files are retained.')
+
+@app.command(rich_help_panel='Projects')
+def status(project: Project=None):
+    """Inspect local project metadata and the graph's embedding model."""
+    project_status(resolve_project(project))
 
 @app.command(rich_help_panel='Setup')
 def doctor():
