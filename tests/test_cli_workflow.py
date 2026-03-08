@@ -72,6 +72,16 @@ def embed(repo):
     app.main(['embed', str(repo), '--quiet'])
     return projects.load_project(repo)
 
+def test_keyring_and_config_show_never_print_secret(monkeypatch, capsys):
+    monkeypatch.setattr(sys.stdin, 'isatty', lambda: True)
+    monkeypatch.setattr(config_commands.getpass, 'getpass', lambda prompt: 'private-test-credential')
+    app.main(['config', 'set', '--api-key'])
+    assert settings.api_key(settings.load_settings()) == 'private-test-credential'
+    app.main(['config', 'show'])
+    app.main(['doctor'])
+    assert 'private-test-credential' not in capsys.readouterr().out
+    assert 'private-test-credential' not in (state.home() / 'config.json').read_text()
+
 def test_keyring_failure_never_falls_back_to_plaintext(monkeypatch):
 
     def fail(*args):
@@ -80,6 +90,22 @@ def test_keyring_failure_never_falls_back_to_plaintext(monkeypatch):
     with pytest.raises(state.StateError, match='No key was written to JSON'):
         settings.store_key('private-test-credential')
     assert not (state.home() / 'config.json').exists()
+
+def test_config_validation_and_model_defaults(configured):
+    app.main(['config', 'set', '--embedding-model', 'text-embedding-3-large'])
+    assert settings.load_settings().embedding_dimensions == 3072
+    with pytest.raises(SystemExit, match='Dimensions'):
+        app.main(['config', 'set', '--dimensions', '4000'])
+    with pytest.raises(SystemExit, match='cannot generate answers'):
+        app.main(['config', 'set', '--reasoning-model', 'text-embedding-3-small'])
+    assert settings.load_settings().embedding_dimensions == 3072
+
+def test_corrupt_state_is_not_overwritten(configured):
+    file = state.home() / 'config.json'
+    file.write_text('{broken', encoding='utf-8')
+    with pytest.raises(SystemExit, match='Invalid or unsupported metadata'):
+        app.main(['config', 'set', '--reasoning-model', 'gpt-4.1-mini'])
+    assert file.read_text() == '{broken'
 
 def test_atomic_write_preserves_previous_document(configured, monkeypatch):
     path = state.home() / 'config.json'
