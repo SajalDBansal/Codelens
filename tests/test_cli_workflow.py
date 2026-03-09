@@ -72,6 +72,23 @@ def embed(repo):
     app.main(['embed', str(repo), '--quiet'])
     return projects.load_project(repo)
 
+def test_first_run_prompts_once_and_stores_no_key(repo, models, monkeypatch):
+    monkeypatch.setattr(sys.stdin, 'isatty', lambda: True)
+    responses = iter(['', ''])
+    monkeypatch.setattr('builtins.input', lambda prompt: next(responses))
+    monkeypatch.setattr(config_commands.getpass, 'getpass', lambda prompt: 'test-placeholder-not-a-real-key')
+    project = embed(repo)
+    monkeypatch.setattr('builtins.input', lambda prompt: pytest.fail('Setup ran twice'))
+    app.main(['ask', 'What does checkout do?', '--project', project.id])
+    assert settings.load_settings().embedding_dimensions == 1536
+    for file in [state.home() / 'config.json', state.home() / 'projects.json', project.manifest_path]:
+        assert config.OPENAI_API_KEY not in file.read_text(encoding='utf-8')
+
+def test_noninteractive_first_run_is_actionable(repo):
+    with pytest.raises(SystemExit, match='Run codelens init'):
+        app.main(['embed', str(repo)])
+    assert not (repo / '.codelens').exists()
+
 def test_keyring_and_config_show_never_print_secret(monkeypatch, capsys):
     monkeypatch.setattr(sys.stdin, 'isatty', lambda: True)
     monkeypatch.setattr(config_commands.getpass, 'getpass', lambda prompt: 'private-test-credential')
@@ -99,6 +116,23 @@ def test_config_validation_and_model_defaults(configured):
     with pytest.raises(SystemExit, match='cannot generate answers'):
         app.main(['config', 'set', '--reasoning-model', 'text-embedding-3-small'])
     assert settings.load_settings().embedding_dimensions == 3072
+
+def test_projects_select_search_and_remove_without_deleting(repo, tmp_path, configured, models, capsys, monkeypatch):
+    first = embed(repo)
+    other = tmp_path / 'other'
+    other.mkdir()
+    second = projects.add_project(other)
+    app.main(['projects', 'use', second.id])
+    assert projects.resolve_project().id == second.id
+    monkeypatch.chdir(repo)
+    assert projects.resolve_project().id == first.id
+    monkeypatch.chdir(tmp_path)
+    app.main(['projects', 'list', 'checkout'])
+    assert str(repo) in capsys.readouterr().out
+    assert projects.resolve_project(first.id[:8]).id == first.id
+    app.main(['projects', 'remove', first.id])
+    assert first.database.exists() and first.manifest_path.exists()
+    assert len(projects.registry().projects) == 1
 
 def test_duplicate_project_names_require_id(repo, tmp_path):
     projects.add_project(repo, name='demo')
@@ -136,6 +170,114 @@ def test_atomic_write_preserves_previous_document(configured, monkeypatch):
         settings.save_settings(settings.Settings())
     assert path.read_bytes() == before
     assert not list(state.home().glob('*.tmp'))
+
+def test_project_lock_prevents_second_command(repo, configured, models):
+    project = embed(repo)
+    with state.locked(repo / '.codelens' / 'project.lock'), pytest.raises(SystemExit, match='Another command'):
+        app.main(['ask', 'checkout', '--project', project.id])
+
+@pytest.mark.parametrize('change', [['--embedding-model', 'text-embedding-3-large', '--dimensions', '8'], ['--dimensions', '4']])
+def test_embedding_mismatch_stops_before_network(repo, configured, models, change):
+    project = embed(repo)
+    app.main(['config', 'set', *change])
+    models.clear()
+    before = project.database.read_bytes()
+    with pytest.raises(SystemExit, match='on-model-change'):
+        app.main(['ask', 'checkout', '--project', project.id])
+    assert models == []
+    assert project.database.read_bytes() == before
+
+def test_keep_uses_old_query_model_but_new_reasoning_model(repo, configured, models):
+    project = embed(repo)
+    app.main(['config', 'set', '--embedding-model', 'text-embedding-3-large', '--dimensions', '4', '--reasoning-model', 'gpt-5-mini'])
+    models.clear()
+    app.main(['ask', 'checkout', '--project', project.id, '--on-model-change', 'keep'])
+    assert ('query', 'text-embedding-3-small', 8) in models
+    assert ('answer', 'gpt-5-mini') in models
+    assert not [call for call in models if call[0] == 'index']
+    assert projects.load_project(repo).last_reasoning_model == 'gpt-5-mini'
+    assert settings.load_settings().embedding_model == 'text-embedding-3-large'
+
+def test_reasoning_change_does_not_reembed(repo, configured, models):
+    project = embed(repo)
+    app.main(['config', 'set', '--reasoning-model', 'gpt-4.1-mini'])
+    models.clear()
+    app.main(['ask', 'checkout', '--project', project.id])
+    assert not [call for call in models if call[0] == 'index']
+    assert projects.load_project(repo).database == project.database
+
+def test_rebuild_failure_preserves_previous_graph_then_resumes(repo, configured, models, monkeypatch):
+    project = embed(repo)
+    before = project.database.read_bytes()
+    app.main(['config', 'set', '--dimensions', '4'])
+    original = indexer.Embedder.embed_entities
+
+    def fail(self, items):
+        raise RuntimeError('simulated API outage')
+    with monkeypatch.context() as patch:
+        patch.setattr(indexer.Embedder, 'embed_entities', fail)
+        with pytest.raises(RuntimeError, match='simulated API outage'):
+            app.main(['embed', '--project', project.id, '--on-model-change', 'rebuild', '--quiet'])
+    failed = projects.load_project(repo)
+    assert failed.status == 'ready'
+    assert failed.database == project.database
+    assert project.database.read_bytes() == before
+    pending = (repo / failed.pending_database).resolve()
+    app.main(['embed', '--project', project.id, '--on-model-change', 'rebuild', '--quiet'])
+    rebuilt = projects.load_project(repo)
+    assert rebuilt.database == pending
+    assert rebuilt.embedding_dimensions == 4 and rebuilt.pending_database is None
+    assert project.active_database in rebuilt.previous_databases
+    assert project.database.read_bytes() == before
+    assert indexer.Embedder.embed_entities is original
+    app.main(['retrieve', 'checkout', '--project', project.id])
+    assert ('query', 'text-embedding-3-small', 4) in models
+
+def test_freshness_check_and_no_update(repo, configured, models, capsys):
+    project = embed(repo)
+    (repo / 'checkout.py').write_text('def new_checkout():\n    return 42\n', encoding='utf-8')
+    models.clear()
+    app.main(['retrieve', 'checkout', '--project', project.id, '--no-update'])
+    assert not [call for call in models if call[0] == 'index']
+    app.main(['retrieve', 'checkout', '--project', project.id])
+    assert [call for call in models if call[0] == 'index']
+    assert 'new_checkout' in capsys.readouterr().out
+    assert projects.load_project(repo).last_reasoning_model is None
+    assert not [call for call in models if call[0] == 'answer']
+
+def test_failed_incremental_update_blocks_answer_until_recovered(repo, configured, models, monkeypatch):
+    project = embed(repo)
+    (repo / 'checkout.py').write_text('def checkout():\n    return 42\n', encoding='utf-8')
+
+    def fail(self, items):
+        raise RuntimeError('simulated outage')
+    models.clear()
+    with monkeypatch.context() as patch:
+        patch.setattr(indexer.Embedder, 'embed_entities', fail)
+        with pytest.raises(RuntimeError, match='simulated outage'):
+            app.main(['ask', 'checkout', '--project', project.id])
+    assert projects.load_project(repo).status == 'failed'
+    assert models == []
+    with pytest.raises(SystemExit, match='did not complete'):
+        app.main(['ask', 'checkout', '--project', project.id, '--no-update'])
+    app.main(['ask', 'checkout', '--project', project.id])
+    assert projects.load_project(repo).status == 'ready'
+
+def test_no_update_cannot_rebuild(repo, configured, models):
+    project = embed(repo)
+    app.main(['config', 'set', '--dimensions', '4'])
+    with pytest.raises(SystemExit, match='cannot be combined'):
+        app.main(['ask', 'checkout', '--project', project.id, '--no-update', '--on-model-change', 'rebuild'])
+
+def test_adopts_old_graph_and_legacy_commands(repo, configured, models):
+    database = repo / '.codelens' / 'old.lbug'
+    with settings.engine_settings(configured):
+        indexer.run_indexing(repo, db_path=database, verbose=False)
+    assert not (repo / '.codelens' / 'project.json').exists()
+    index_command.main([str(repo), '--db', str(database), '--quiet'])
+    ask_command.main(['checkout', '--db', str(database), '--no-answer'])
+    assert projects.load_project(repo).database == database
+    assert len(projects.registry().projects) == 1
 
 def test_readonly_inspection_does_not_create_database(tmp_path):
     missing = tmp_path / 'missing' / 'graph.lbug'

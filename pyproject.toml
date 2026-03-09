@@ -90,6 +90,8 @@ dev = [
 # After `pip install -e .` these become real terminal commands.
 [project.scripts]
 codelens = "graph_rag.cli.app:main"
+graph-rag-index = "graph_rag.cli.index_command:main"
+graph-rag-ask = "graph_rag.cli.ask_command:main"
 
 [tool.setuptools.packages.find]
 # Ship the `graph_rag` package and its sub-packages; ignore everything else.
