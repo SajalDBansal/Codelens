@@ -1,0 +1,22 @@
+[
+  {
+    "question": "How does checkout combine discount and tax?",
+    "expect": "checkout.py::checkout"
+  },
+  {
+    "question": "Where are item prices added to get the subtotal?",
+    "expect": "pricing.py::subtotal"
+  },
+  {
+    "question": "How is the discount percentage validated?",
+    "expect": "pricing.py::apply_discount"
+  },
+  {
+    "question": "Where is percentage tax applied after the discount?",
+    "expect": "pricing.py::add_tax"
+  },
+  {
+    "question": "Where is the final order amount rounded to two decimal places?",
+    "expect": "checkout.py::checkout"
+  }
+]

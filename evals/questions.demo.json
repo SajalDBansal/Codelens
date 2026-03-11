@@ -1,0 +1,50 @@
+[
+  {
+    "question": "How does login verify a password?",
+    "expect": "src/auth/user_service.py::AuthService.verify"
+  },
+  {
+    "question": "Where is the session token created?",
+    "expect": "src/auth/tokens.py::make_token"
+  },
+  {
+    "question": "What is the maximum number of cart items?",
+    "expect": "src/cart/checkout.py::MAX_CART_ITEMS"
+  },
+  {
+    "question": "How is tax calculated on an order?",
+    "expect": "src/cart/checkout.py::compute_total"
+  },
+  {
+    "question": "How do I format a price for display?",
+    "expect": "web/src/format.ts::formatPrice"
+  },
+  {
+    "question": "How do I shorten a long string in the UI?",
+    "expect": "web/src/format.ts::truncate"
+  },
+  {
+    "question": "What limits the size of a discount?",
+    "expect": "services/pricing/pricing.go::MaxDiscountPercent"
+  },
+  {
+    "question": "How does the Java order total get computed?",
+    "expect": "java/src/OrderService.java::OrderService.computeTotal"
+  },
+  {
+    "question": "How is Rust tax applied to a line item?",
+    "expect": "rust/src/lib.rs::apply_tax"
+  },
+  {
+    "question": "Which repository method loads a user by email?",
+    "expect": "src/db/repository.py::UserRepository.find_by_email"
+  },
+  {
+    "question": "What is the retry limit for the web client?",
+    "expect": "web/src/api.ts::RETRY_LIMIT"
+  },
+  {
+    "question": "How does the pricing engine loop over rules?",
+    "expect": "services/pricing/pricing.go::Engine.Apply"
+  }
+]
