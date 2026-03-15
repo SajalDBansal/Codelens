@@ -1,3 +1,19 @@
+# requirements.txt
+# ================
+# The libraries this project needs.
+#
+# The normal way to install is:
+#
+#     pip install -e .
+#
+# which reads pyproject.toml and ALSO creates the terminal commands
+# (codelens / graph-rag-index / graph-rag-ask). This file exists for the case where you
+# just want the libraries without installing the package itself:
+#
+#     pip install -r requirements.txt
+#
+# Keep the versions here in sync with the `dependencies` list in pyproject.toml.
+
 ladybug==0.21.2
 tree-sitter>=0.26.0,<0.27
 tree-sitter-language-pack>=1.22.1,<2

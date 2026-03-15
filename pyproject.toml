@@ -82,6 +82,11 @@ dev = [
     "ruff>=0.17.1,<0.18",
 ]
 
+[project.urls]
+Homepage = "https://github.com/SajalDBansal/codelens"
+Repository = "https://github.com/SajalDBansal/codelens"
+Documentation = "https://github.com/SajalDBansal/codelens/blob/HEAD/docs/README.md"
+Issues = "https://github.com/SajalDBansal/codelens/issues"
 
 # ---------------------------------------------------------------------------
 # CLI ENTRY POINTS
