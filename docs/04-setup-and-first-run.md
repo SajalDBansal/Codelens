@@ -1,6 +1,6 @@
 # 04 - Setup and first run
 
-Use Python 3.12 for the recommended Windows setup. CodeLens supports Python 3.11–3.13; Python 3.14 is excluded because of a native LadybugDB loading failure with the tested standard Windows interpreter. See supported versions and local verification for the tested dependency baseline and verification record. Other platforms still need release verification. You need internet access for installation and model requests, an OpenAI API key, and a working OS credential-store backend.
+Use Python 3.12 for the recommended Windows setup. CodeLens supports Python 3.11–3.13; Python 3.14 is excluded because of a native LadybugDB loading failure with the tested standard Windows interpreter. See [supported versions and local verification](compatibility-and-ci.md) for the tested dependency baseline and verification record. Other platforms still need release verification. You need internet access for installation and model requests, an OpenAI API key, and a working OS credential-store backend.
 
 ## 1. Open the package source
 

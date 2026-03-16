@@ -71,7 +71,7 @@ There is one local CLI process for an operation, not a distributed service. The 
 
 ## How to read examples honestly
 
-For release maintenance, see Supported versions and local verification. It explains the dependency baseline, local checks, and how to update them. GitHub Actions and CI/CD setup are deferred.
+For release maintenance, see [Supported versions and local verification](compatibility-and-ci.md). It explains the dependency baseline, local checks, and how to update them. GitHub Actions and CI/CD setup are deferred.
 
 The running example is [examples/smoke_repo](../examples/smoke_repo): checkout adds prices, applies a discount, then tax. Commands marked as model-backed use your OpenAI account. The offline smoke script substitutes deterministic model results and tests mechanics rather than answer quality.
 

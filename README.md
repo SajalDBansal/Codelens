@@ -79,7 +79,7 @@ The build operations can interleave; the diagram describes their responsibilitie
 
 ## Install and run locally
 
-Use **Python 3.12** for the recommended setup. The supported Python range is **3.11–3.13**, with Windows x64 compatibility checks. Python 3.14 is excluded because the pinned LadybugDB wheel failed to load with the tested standard Windows Python installation. See supported versions and local verification for exact test results, dependency versions, and local validation instructions. GitHub Actions and CI/CD setup are deferred. Other platforms still need release verification.
+Use **Python 3.12** for the recommended setup. The supported Python range is **3.11–3.13**, with Windows x64 compatibility checks. Python 3.14 is excluded because the pinned LadybugDB wheel failed to load with the tested standard Windows Python installation. See [supported versions and local verification](docs/compatibility-and-ci.md) for exact test results, dependency versions, and local validation instructions. GitHub Actions and CI/CD setup are deferred. Other platforms still need release verification.
 
 You also need internet access to install dependencies and use OpenAI, an OpenAI API key with access to your selected models, and a working OS credential store. Indexing and questions can incur API charges. The package reads local folders; clone or download a repository yourself before embedding it.
 

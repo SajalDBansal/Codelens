@@ -2,7 +2,7 @@
 
 There are different questions to test: does the code behave correctly, does local storage survive an update, does retrieval find expected evidence, and does a model produce a good answer? One passing smoke test cannot establish all four.
 
-The compatibility and local verification guide explains the supported Python versions, reproducible dependencies, and local checks. GitHub Actions and CI/CD setup are deferred. Use its constrained install command when reproducing the tested Windows baseline.
+The [compatibility and local verification guide](compatibility-and-ci.md) explains the supported Python versions, reproducible dependencies, and local checks. GitHub Actions and CI/CD setup are deferred. Use its constrained install command when reproducing the tested Windows baseline.
 
 ## Automated tests without OpenAI requests
 
