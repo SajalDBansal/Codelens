@@ -108,7 +108,7 @@ Set-Alias -Name codelens -Value (Join-Path (Get-Location).Path '.venv\Scripts\co
 codelens --help
 ```
 
-You can now change to another project directory and run `codelens` there. The alias lasts for the current PowerShell session.
+You can now change to another project directory and run `codelens` there. The alias lasts for the current PowerShell session. For a command that also works in new terminals, follow [Use `codelens` from any directory](#use-codelens-from-any-directory).
 
 ### Windows Git Bash
 
@@ -143,7 +143,7 @@ codelens init
 
 The `-e` option makes this an editable installation: changes to the package source are used without reinstalling. Use `python -m pip install .` for a regular source installation. Keep the virtual environment active, or invoke its executable by absolute path, when working in other directories.
 
-If you already use uv and want a command available outside an activated environment, run `uv tool install --python 3.12 --editable .` from the package directory. Follow uv's PATH instructions if needed; see its [tool installation guide](https://docs.astral.sh/uv/guides/tools/). Use either this tool installation or the virtual-environment instructions above.
+For a persistent command outside an activated environment, use one of the options in [Use `codelens` from any directory](#use-codelens-from-any-directory).
 
 If this same environment contains the earlier distribution named `graph-rag-reviewer`, uninstall it before installing the renamed package:
 
@@ -153,6 +153,79 @@ python -m pip install -e .
 ```
 
 This removes the old Python distribution; it does not delete `~/.codelens` settings or your projects' graph folders. The existing `graph_rag` import and legacy command aliases remain supported.
+
+### Use `codelens` from any directory
+
+Make the installed command available on your **user PATH** so you can type `codelens` from any project folder, including in new terminals, without activating a virtual environment. Choose one option below. These setups apply to your user account; other accounts need their own setup.
+
+Keep the CodeLens checkout and its environment at their installed locations. An editable installation uses that checkout, and a symlink points to the existing command. If you move or delete them, reinstall and recreate the link.
+
+#### Option 1: Install as a tool with uv
+
+If you have [uv installed](https://docs.astral.sh/uv/getting-started/installation/), run these commands from the CodeLens repository directory on Windows, macOS, or Linux:
+
+```sh
+uv tool install --python 3.12 --editable .
+uv tool update-shell
+```
+
+uv creates a dedicated environment and exposes the package's commands in its tool executable directory. `uv tool update-shell` adds that directory to PATH where supported; follow any instructions it prints, then reopen your terminal. See [uv's tool documentation](https://docs.astral.sh/uv/concepts/tools/). This option handles command installation without a manual symlink.
+
+#### Option 2: Link an existing Windows installation
+
+After installing into `.venv` with the PowerShell instructions above, run the following **from the CodeLens repository directory**. It links only `codelens.exe` into a dedicated user bin folder and adds that folder to your user PATH.
+
+In Windows PowerShell 5.1, create the link from **Run as administrator**, using the same Windows account. Recent PowerShell versions can also create it without elevation when Windows Developer Mode is enabled. See Microsoft's [symbolic link requirements](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/new-item#-itemtype). If that is unavailable, use the uv option above.
+
+```powershell
+$codelensExe = (Resolve-Path -LiteralPath '.venv\Scripts\codelens.exe' -ErrorAction Stop).Path
+$codelensBin = Join-Path $env:LOCALAPPDATA 'CodeLens\bin'
+New-Item -ItemType Directory -Path $codelensBin -Force | Out-Null
+New-Item -ItemType SymbolicLink -Path (Join-Path $codelensBin 'codelens.exe') -Target $codelensExe -ErrorAction Stop | Out-Null
+
+# Persist for future terminals, preserving the existing user PATH.
+$codelensUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+if (($codelensUserPath -split ';') -notcontains $codelensBin) {
+    $codelensNewPath = (@($codelensUserPath, $codelensBin) | Where-Object { $_ }) -join ';'
+    [Environment]::SetEnvironmentVariable('Path', $codelensNewPath, 'User')
+}
+
+# Also make it available in this terminal.
+$env:Path = "$codelensBin;$env:Path"
+```
+
+The link command stops if `codelens.exe` already exists at the destination. Inspect an existing link before replacing it. Open a new terminal after setup; restart VS Code or Windows Terminal if its terminals still inherit the old PATH.
+
+Verify from another folder in PowerShell:
+
+```powershell
+Set-Location $env:TEMP
+Get-Command codelens -All
+codelens --help
+```
+
+The executable path should include `CodeLens\bin\codelens.exe`. If the earlier session alias appears first, remove that alias with `Remove-Item Alias:codelens` or use a fresh terminal. The user PATH also makes the command available in new Command Prompt and Git Bash sessions.
+
+#### Option 3: Create a symlink on macOS or Linux
+
+After installing into `.venv`, run this from the CodeLens repository directory in Bash or Zsh:
+
+```sh
+codelens_repo="$(pwd -P)"
+mkdir -p "$HOME/.local/bin"
+ln -s "$codelens_repo/.venv/bin/codelens" "$HOME/.local/bin/codelens"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+This uses an absolute [symbolic link](https://www.gnu.org/software/coreutils/manual/html_node/ln-invocation.html), so changing the working directory does not change its target. If the destination already exists, inspect it before replacing it. Add `export PATH="$HOME/.local/bin:$PATH"` to `~/.bashrc` for Bash or `~/.zshrc` for Zsh if that directory is not already on PATH. For Bash login shells, ensure your login profile loads `~/.bashrc` or add the same PATH line there. Reopen the terminal, then check from another directory:
+
+```sh
+cd /tmp
+command -v codelens
+codelens --help
+```
+
+After any option, change to the project you want to index and run `codelens embed .`, or pass its path explicitly: `codelens embed "/path/to/my-project"`. Run `codelens init` once first if you have not configured your API key and models.
 
 ### Configure once
 

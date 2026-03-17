@@ -24,7 +24,7 @@ py -3.12 -m venv .venv
 Set-Alias -Name codelens -Value (Join-Path (Get-Location).Path '.venv\Scripts\codelens.exe')
 ```
 
-The alias works for this terminal session, including after changing directories. Direct executable calls avoid needing to change PowerShell's script execution policy.
+The alias works for this terminal session, including after changing directories. Direct executable calls avoid needing to change PowerShell's script execution policy. To make `codelens` available in new terminals without activation, follow the README's [persistent command and symlink setup](../README.md#use-codelens-from-any-directory).
 
 **Git Bash on Windows**, using a Python 3.12 interpreter:
 
