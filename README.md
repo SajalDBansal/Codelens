@@ -17,7 +17,7 @@ The commands above work after the [local installation](#install-and-run-locally)
 
 ## Learn the whole system
 
-Start with the [documentation guide](docs/README.md) for a beginner reading path and 23 chapters covering every stage. The [setup guide](docs/04-setup-and-first-run.md) gets you running, the [end-to-end walkthrough](docs/22-end-to-end-walkthrough.md) follows the bundled checkout example, and the [configuration reference](docs/06-configuration-reference.md) explains every editable setting.
+Start with the [documentation guide](https://github.com/SajalDBansal/codelens/blob/HEAD/docs/README.md) for a beginner reading path and 23 chapters covering every stage. The [setup guide](https://github.com/SajalDBansal/codelens/blob/HEAD/docs/04-setup-and-first-run.md) gets you running, the [end-to-end walkthrough](https://github.com/SajalDBansal/codelens/blob/HEAD/docs/22-end-to-end-walkthrough.md) follows the bundled checkout example, and the [configuration reference](https://github.com/SajalDBansal/codelens/blob/HEAD/docs/06-configuration-reference.md) explains every editable setting.
 
 ## What CodeLens does
 
@@ -79,7 +79,17 @@ The build operations can interleave; the diagram describes their responsibilitie
 
 ## Install and run locally
 
-Use **Python 3.12** for the recommended setup. The supported Python range is **3.11–3.13**, with Windows x64 compatibility checks. Python 3.14 is excluded because the pinned LadybugDB wheel failed to load with the tested standard Windows Python installation. See [supported versions and local verification](docs/compatibility-and-ci.md) for exact test results, dependency versions, and local validation instructions. GitHub Actions and CI/CD setup are deferred. Other platforms still need release verification.
+### Install a release file
+
+For a downloaded wheel, installation, upgrades, and removal, follow the
+[release installation guide](https://github.com/SajalDBansal/codelens/blob/HEAD/docs/install-upgrade-uninstall.md). It also explains
+which settings, credentials, and graph files remain after uninstalling. PyPI
+installation instructions there apply only after the maintainer confirms publication;
+this checkout does not assume that a public package named `codelens` is already ours.
+
+The instructions below install from source.
+
+Use **Python 3.12** for the recommended setup. The supported Python range is **3.11–3.13**, with Windows x64 compatibility checks. Python 3.14 is excluded because the pinned LadybugDB wheel failed to load with the tested standard Windows Python installation. See [supported versions and local verification](https://github.com/SajalDBansal/codelens/blob/HEAD/docs/compatibility-and-ci.md) for exact test results, dependency versions, and local validation instructions. Release checks run manually; CI is not required. Other platforms still need release verification.
 
 You also need internet access to install dependencies and use OpenAI, an OpenAI API key with access to your selected models, and a working OS credential store. Indexing and questions can incur API charges. The package reads local folders; clone or download a repository yourself before embedding it.
 

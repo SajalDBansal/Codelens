@@ -4,6 +4,10 @@ Use Python 3.12 for the recommended Windows setup. CodeLens supports Python 3.11
 
 ## 1. Open the package source
 
+If you downloaded a release `.whl` file, use the [release installation guide](install-upgrade-uninstall.md)
+instead. That guide also covers upgrades, uninstalling, and saved-data cleanup.
+The steps here are for installing from a source checkout.
+
 ```sh
 git clone https://github.com/SajalDBansal/codelens.git
 cd codelens
