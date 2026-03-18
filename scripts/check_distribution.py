@@ -45,6 +45,10 @@ def main():
     with tarfile.open(sources[0], "r:gz") as archive:
         members = {name.partition("/")[2]: name for name in archive.getnames()}
         assert not any(name.startswith(".github/workflows/") for name in members)
+        assert not any(name.startswith(("planning/", "dist-")) for name in members)
+        for filename in ("README.md", "LICENSE", "CHANGELOG.md", "requirements.txt"):
+            with archive.extractfile(members[filename]) as stream:
+                assert stream.read() == (root / filename).read_bytes(), filename
         for folder in ("docs", "tests", "scripts", "evals", "examples", "constraints"):
             for source in (root / folder).rglob("*"):
                 if source.is_file() and source.suffix in {".py", ".md", ".json", ".txt", ".yml"}:
@@ -54,11 +58,26 @@ def main():
 
     # -I and a temporary cwd prevent the checkout from hiding an incomplete wheel.
     with tempfile.TemporaryDirectory(prefix="codelens-wheel-") as directory:
+        verify_installed = """
+import importlib.metadata
+import sys
+import zipfile
+from pathlib import Path
+import graph_rag
+
+package = Path(graph_rag.__file__).resolve().parent
+assert package.is_relative_to(Path(sys.prefix).resolve()), package
+assert importlib.metadata.version(sys.argv[2]) == sys.argv[3]
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    for name in archive.namelist():
+        if name.startswith('graph_rag/') and name.endswith('.py'):
+            installed = package.parent / name
+            assert installed.read_bytes() == archive.read(name), name
+print('Verified installed wheel modules:', package)
+"""
         commands = [
-            [str(interpreter), "-I", "-c",
-             ("from pathlib import Path; import graph_rag, sys; "
-             "assert Path(graph_rag.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()); "
-             "print('Wheel import:', graph_rag.__file__)")],
+            [str(interpreter), "-I", "-c", verify_installed,
+             str(wheels[0]), project["name"], project["version"]],
             [str(interpreter), "-I", "-m", "graph_rag", "--help"],
         ]
         for entry in ("codelens", "graph-rag-index", "graph-rag-ask"):
