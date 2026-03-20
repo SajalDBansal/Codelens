@@ -401,6 +401,11 @@ During indexing, eligible code/document chunks are sent to OpenAI for embeddings
 
 ## Development and checks
 
+To prepare a release manually, follow the [release guide](https://github.com/SajalDBansal/codelens/blob/HEAD/docs/releasing.md) and
+[changelog](https://github.com/SajalDBansal/codelens/blob/HEAD/CHANGELOG.md). `scripts/prepare_release.py` runs local tests, builds
+distributions, checks a fresh wheel installation, and writes checksums. It does not
+publish anything. CI is not required.
+
 From the source checkout, using its Python environment:
 
 ```sh

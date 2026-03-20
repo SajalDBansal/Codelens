@@ -107,4 +107,5 @@ belonging to profiles you are retiring. This removes the local saved key; revoki
 the actual OpenAI key is a separate account action. The CLI currently has no
 single command that deletes every profile, graph, and credential.
 
-See the [configuration reference](06-configuration-reference.md) for details.
+See the [configuration reference](06-configuration-reference.md) and
+[release guide](releasing.md) for details.

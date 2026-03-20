@@ -14,6 +14,7 @@ CodeLens reads a local project, stores a searchable graph in that project's `.co
 | Tune it or diagnose a result | [Configuration](06-configuration-reference.md) -> [Retrieval](16-retrieval.md) -> [Troubleshooting](19-troubleshooting.md) |
 | Change the implementation | [Architecture](07-architecture.md) -> [Testing](18-testing.md) -> [Contributor guide](23-contributor-guide.md) |
 | Install or maintain a released copy | [Install, upgrade, uninstall](install-upgrade-uninstall.md) |
+| Prepare and publish a release | [Manual release guide](releasing.md) -> [Release notes](release-notes-0.1.0.md) -> [Changelog](../CHANGELOG.md) |
 
 For a complete read, follow the numbered chapters. Each chapter starts with the idea, explains the current implementation, gives examples, and links to the relevant source. The [glossary](21-glossary.md) is available whenever a term is unfamiliar.
 

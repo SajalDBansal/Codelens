@@ -2,6 +2,11 @@
 
 GitHub Actions and CI/CD setup are deferred. This repository does not include an enabled GitHub workflow. The checks below run locally and do not deploy or publish the package.
 
+For the full manual build and publication sequence, use the [release guide](releasing.md).
+It provides `scripts/prepare_release.py` to run the checks on the current Python version
+and test the finished wheel. Dependency compatibility changes still need the
+supported-version checks described here. CI is not a release requirement.
+
 ## Supported environment
 
 The release target is **Windows x64 with standard CPython 3.11, 3.12, or 3.13**. Python 3.12 remains the recommended starting point. Python 3.10 and 3.14 or later are outside CodeLens's declared range. PyPy, free-threaded Python, Windows ARM64, Linux, and macOS are not currently verified release targets.
