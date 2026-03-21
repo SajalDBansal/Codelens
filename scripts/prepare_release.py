@@ -48,7 +48,8 @@ def main():
 
     # Fail immediately if dependencies, tests, building, or metadata checks fail.
     run(sys.executable, "-m", "pip", "check")
-    run(sys.executable, "-m", "pytest", "-q")
+    # Archived checkouts under planning/ must not be collected as package tests.
+    run(sys.executable, "-m", "pytest", "-q", "tests")
     run(sys.executable, "-m", "build")  # Builds the wheel from the source archive.
     wheels = list(dist.glob("*.whl"))
     sources = list(dist.glob("*.tar.gz"))
