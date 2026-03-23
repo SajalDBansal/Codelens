@@ -34,7 +34,7 @@ def run(*command, capture=False):
 def main():
     argparse.ArgumentParser(description=__doc__).parse_args()
     if sys.prefix == sys.base_prefix:
-        raise RuntimeError("Use a virtual environment; see docs/releasing.md, step 2.")
+        raise RuntimeError("Use a virtual environment; see docs/release-maintenance.md, step 2.")
     if not (3, 11) <= sys.version_info[:2] < (3, 14):
         raise RuntimeError("Use supported CPython 3.11-3.13; 3.12 is recommended.")
     for module in ("pytest", "build", "twine"):

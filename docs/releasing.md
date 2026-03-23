@@ -1,201 +1,129 @@
-# Release CodeLens manually
+# Publish CodeLens: the simple checklist
 
-This is the maintainer's step-by-step guide for `codelens` version `0.1.0`.
-It uses PowerShell on Windows and Python 3.12. There is no CI pipeline and nothing
-publishes automatically. A wheel is the installable `.whl` file; a source archive
-is the `.tar.gz` containing source and supporting files.
+**Goal:** let other people install your package with `pip install codelens`.
+Your code is already on GitHub. The remaining job is uploading the checked package
+to **PyPI**, the website from which pip installs packages.
 
-The changelog, user installation guide, release notes, and local validation script
-are prepared in this repository. You handle your account setup, review, commits,
-and uploads. An OpenAI API key runs CodeLens; PyPI/TestPyPI tokens publish the package.
-They are different credentials.
+We are using a direct PyPI release after local checks. You do **not** need a
+TestPyPI account for this route: TestPyPI already has a `codelens 0.1.0` package
+whose project links do not match yours. Nothing has been uploaded for you.
 
-## 1. Review the release files
+## Already handled on your computer
 
-Open the directory containing `pyproject.toml`:
+- Your latest GitHub commit was checked against the remote `main` branch.
+- Package tests and local graph checks have passed; the runtime code is unchanged.
+- The release files are in `E:\projects\6. Codelens\dist`.
+- The tools needed by the commands below are installed in `.venv-release`.
+- A one-command check is provided for testing the package after you upload it.
+
+You do not need to recreate an environment, set up CI, or build the package again
+unless you change packaged files. The local check report is in
+`planning/codelens-release-check-2026-10-22.md`. On a different computer, use the
+[setup reference](release-maintenance.md#2-prepare-a-release-environment).
+
+## 1. Create your PyPI account
+
+1. Open [PyPI registration](https://pypi.org/account/register/).
+2. Choose a username and password, and enter your email address.
+3. Open PyPI's email and verify your email address.
+4. Sign in and open **Account settings**. Set up **Two-factor authentication** using
+   an authenticator app or security key, and save the recovery codes privately.
+
+This account is separate from GitHub and OpenAI. You do not create the CodeLens
+project manually; the first successful upload creates it.
+[PyPI account instructions](https://docs.pypi.org/your-account/managing-your-account/).
+
+**Done when:** you can sign in, your email is verified, and two-factor authentication is enabled.
+
+## 2. Create an upload token
+
+1. Open [your PyPI account settings](https://pypi.org/manage/account/#api-tokens).
+2. Find **API tokens** and choose **Add API token**.
+3. Give it a name such as `codelens-first-release`.
+4. Choose **Entire account** for Scope, because your project does not exist yet.
+5. Create the token and save it privately. You will paste it into the terminal in step 4.
+
+This is a PyPI upload token, usually starting with `pypi-`. It is **not your OpenAI
+key**. Do not put it in source files or send it in chat. After publishing, you can
+replace this first token with one restricted to the CodeLens project.
+
+**Done when:** you have the token saved somewhere private.
+
+## 3. Save this small guide/tool update to GitHub
+
+Your earlier commit is already pushed. This clearer guide adds one checking script
+and keeps the longer instructions as a reference. Open **PowerShell**, then run:
 
 ```powershell
 Set-Location "E:\projects\6. Codelens"
-git status --short
 git diff
+git add docs/releasing.md docs/release-maintenance.md scripts/check_published.py scripts/prepare_release.py
+git commit -m "Simplify the manual publishing steps"
+git push origin main
 ```
 
-Use your checkout path if different. Review [CHANGELOG.md](../CHANGELOG.md), the
-[user installation guide](install-upgrade-uninstall.md), and the
-[GitHub release notes](release-notes-0.1.0.md). Version `0.1.0` is already in
-`pyproject.toml`. Keep the version, notes, and eventual tag `v0.1.0` consistent.
+Review the changes before committing. `dist/` and `.venv-release/` stay ignored;
+do not add them to Git. If these exact changes are already committed and pushed,
+skip the commit commands. Committing alone does not require rebuilding the files.
 
-Commit the intended source and documentation changes using your normal Git workflow.
-Keep `.venv*`, graphs, credentials, and `dist/` out of Git. Release files are uploaded
-as assets, not committed. The package currently promises Windows x64 and Python
-3.11–3.13; do not expand that claim without testing.
+**Done when:** this guide and `scripts/check_published.py` appear on GitHub.
 
-## 2. Prepare a release environment
+## 4. Upload CodeLens to PyPI
 
-Do this once for the checkout, or use a new environment when testing newer dependencies:
+Use PowerShell in the same project directory. Copy and run this one command:
 
 ```powershell
-py -3.12 -m venv .venv-release
-.\.venv-release\Scripts\python.exe -m pip install -e ".[dev]" "build>=1,<2" "twine>=6,<7"
+.\.venv-release\Scripts\python.exe -m twine upload --repository pypi --username __token__ dist/codelens-0.1.0-py3-none-any.whl dist/codelens-0.1.0.tar.gz
 ```
 
-These are development/build tools, not extra requirements for CodeLens users.
-No OpenAI key or PyPI token is needed for the next step.
+When asked for a password or API token, paste the **PyPI token from step 2** and
+press Enter. Hidden input may show no characters; that is normal. The command
+uploads the two package files. It does not need your OpenAI key.
 
-## 3. Build and validate locally
+**Done when:** both uploads finish successfully and you can open your
+[CodeLens page on PyPI](https://pypi.org/project/codelens/).
+
+If the name is unavailable, permission is denied, or the version already exists,
+stop and share the error message without the token. A missing public project page
+does not reserve the name. Do not rename the archive files or delete/re-upload an
+existing version to get around an error.
+
+## 5. Check that other people can install it
+
+After the upload succeeds, run:
 
 ```powershell
-.\.venv-release\Scripts\python.exe scripts/prepare_release.py
+.\.venv-release\Scripts\python.exe scripts/check_published.py pypi
 ```
 
-The script stops on the first failed command. It:
+This downloads the published wheel, checks that it is exactly the file we prepared,
+installs it in a fresh temporary environment, and checks the commands and local
+graph workflow. It does not use OpenAI or modify your saved projects.
 
-1. Checks installed dependencies and runs the full test suite.
-2. Builds a source archive, then builds the wheel from that archive.
-3. Checks metadata and README rendering with Twine.
-4. Installs the wheel into a fresh temporary environment using normal dependency ranges.
-5. Checks archive contents, imports, CLI launchers, and the real local graph smoke workflow.
-6. Writes checksums and a validation record only after all checks pass.
+**Done when:** the command ends with `PASS: codelens 0.1.0 from pypi installed and worked.`
 
-Tests use model doubles and temporary graphs. This step does not access your API
-key or re-index your real projects. Dependency/parser downloads can require internet.
-The temporary wheel environment is removed when the script exits.
+If it fails, share the error so we can check it. After it passes, people using a
+supported Python version can install with `pip install codelens`, then run
+`codelens init`. Link them to the [installation guide](install-upgrade-uninstall.md).
 
-Expected output:
+## 6. Add the release to your GitHub page
 
-```text
-dist/
-    codelens-0.1.0-py3-none-any.whl
-    codelens-0.1.0.tar.gz
-    SHA256SUMS
-    validation.json
-```
+Open your [repository's Releases page](https://github.com/SajalDBansal/Codelens/releases)
+and choose **Draft a new release**. Use:
 
-`validation.json` records the interpreter, checks, resolved wheel dependencies,
-artifact hashes, and Git revision when available. It explicitly records that no
-live model test or upload occurred. Keep the existing fresh-clone/live-API report
-as separate evidence. A successful run here covers this interpreter, not a fresh
-run of every supported Python version; use [compatibility checks](compatibility-and-ci.md)
-when changing dependencies or supported versions.
+| Field | What to enter |
+| --- | --- |
+| Tag | Create `v0.1.0`, targeting the commit pushed in step 3. |
+| Title | `CodeLens 0.1.0` |
+| Description | Copy [the prepared release notes](release-notes-0.1.0.md). Add your PyPI link after step 5 passes. |
+| Attachments | The `.whl`, `.tar.gz`, and `SHA256SUMS` files from `dist/`. |
+| Pre-release | Select it to label this initial version as a beta. |
 
-The script refuses a nonempty `dist/` to prevent mixing versions or accepting stale
-results. For a retry after a failure or source edit, preserve the old files first:
+Review the draft, then click **Publish release**. Finally, record the actual date
+and URLs and update the changelog's pending-publication wording.
 
-```powershell
-Rename-Item -LiteralPath dist -NewName ("dist-backup-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-.\.venv-release\Scripts\python.exe scripts/prepare_release.py
-```
+You are finished when the PyPI installation check passes and your GitHub release
+contains the download files. No CI pipeline is needed.
 
-If an artifact set was already prepared and verified for the same source contents,
-reuse it. Changing source, metadata, or packaged documentation requires rebuilding.
-Run `Get-FileHash -Algorithm SHA256 dist\*.whl, dist\*.tar.gz` to compare files with
-`SHA256SUMS` before uploading or transferring them.
-
-## 4. Decide where users will download it
-
-- For a portfolio release with downloadable files, go to step 8. PyPI is optional.
-- For installation through `pip install codelens`, continue with TestPyPI, then PyPI.
-
-The name `codelens` in GitHub and in the CLI does not reserve the distribution name
-on either index. Check ownership/availability on both before uploading. A missing
-project page alone does not guarantee a name can be registered. If the name is
-unavailable, choose another distribution name, update `[project].name` and the
-installation instructions, and rebuild. The `codelens` CLI and `graph_rag` import
-can remain unchanged. Examples below assume `codelens` is the confirmed name.
-
-## 5. Set up your publishing accounts
-
-Create separate accounts on [TestPyPI](https://test.pypi.org/account/register/) and
-[PyPI](https://pypi.org/account/register/), verify your email, and enable two-factor
-authentication. Store recovery codes privately. PyPI requires 2FA.
-[Account documentation](https://docs.pypi.org/your-account/managing-your-account/).
-
-In each site's account settings, create an upload token. For the first upload of a
-new project, the project does not exist yet, so use an account-wide token. After
-creation, replace it with a project-scoped token and revoke the initial broad token.
-Keep the two sites' tokens separate. Paste a token only into Twine's hidden prompt;
-do not put it in source, this guide, a shell command, or a chat message.
-
-## 6. Try the release on TestPyPI
-
-Upload only the two distributions, not `validation.json` or `SHA256SUMS`:
-
-```powershell
-.\.venv-release\Scripts\python.exe -m twine upload --repository testpypi --username __token__ dist/*.whl dist/*.tar.gz
-```
-
-Paste your **TestPyPI** token when prompted. Check the project page's description,
-version, author, license, and files. TestPyPI is a rehearsal index; it has separate
-accounts and is not permanent storage. [TestPyPI guide](https://packaging.python.org/en/latest/guides/using-testpypi/).
-
-Test installation in a fresh environment. Install dependencies from normal PyPI,
-then install only CodeLens from TestPyPI:
-
-```powershell
-py -3.12 -m venv .venv-testpypi
-.\.venv-testpypi\Scripts\python.exe -m pip install --index-url https://pypi.org/simple/ -r requirements.txt
-.\.venv-testpypi\Scripts\python.exe -m pip install --index-url https://test.pypi.org/simple/ --no-deps "codelens==0.1.0"
-.\.venv-testpypi\Scripts\python.exe -m pip check
-.\.venv-testpypi\Scripts\python.exe -I -c "import importlib.metadata as m; print(m.version('codelens'))"
-.\.venv-release\Scripts\python.exe scripts/check_distribution.py --python .venv-testpypi/Scripts/python.exe
-```
-
-`--no-deps` keeps dependency resolution off the test index; the preceding command
-installed those dependencies from the matching release's `requirements.txt`.
-The distribution checker runs the installed CLI and graph smoke outside the checkout.
-Avoid `pip install -e .` in this environment: that would replace the artifact being tested.
-
-The real OpenAI workflow was already validated separately. If your release changes
-model or credential behavior, repeat `init`, `embed`, `retrieve`, and `ask` on a small
-disposable project with your own configured key before publication.
-
-## 7. Publish the approved files to PyPI
-
-Once the TestPyPI result is satisfactory, upload the same files to the real index:
-
-```powershell
-.\.venv-release\Scripts\python.exe -m twine upload --repository pypi --username __token__ dist/*.whl dist/*.tar.gz
-```
-
-Use your **PyPI** token. Do not rebuild between the test upload and production
-upload unless fixing something, in which case repeat the validation. PyPI does not
-allow uploaded filenames to be reused, even after deletion. A changed release
-normally needs a new version such as `0.1.1`.
-[Upload troubleshooting](https://docs.pypi.org/publishing/troubleshooting/).
-
-Verify the production installation:
-
-```powershell
-py -3.12 -m venv .venv-pypi
-.\.venv-pypi\Scripts\python.exe -m pip install --index-url https://pypi.org/simple/ "codelens==0.1.0"
-.\.venv-pypi\Scripts\python.exe -m pip check
-.\.venv-release\Scripts\python.exe scripts/check_distribution.py --python .venv-pypi/Scripts/python.exe
-```
-
-Use fresh environment names if these already exist. Confirm the README links and
-installation command point to the project you own. The build/upload/install flow
-is covered by the [PyPA packaging tutorial](https://packaging.python.org/en/latest/tutorials/packaging-projects/).
-
-## 8. Create the GitHub release
-
-Push the reviewed release commit using your normal Git workflow. On the repository's
-**Releases** page, choose **Draft a new release**. Select/create `v0.1.0` at the
-commit matching the built source; check the target carefully.
-
-Use title **CodeLens 0.1.0**, copy the [prepared release notes](release-notes-0.1.0.md),
-and attach the wheel, source archive, and `SHA256SUMS`. Choose the pre-release marker
-to communicate this initial beta's status. Review the draft and then publish it.
-The GitHub marker is independent of Python's version string. Include a PyPI link
-only if that publication succeeded. [GitHub release instructions](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository).
-
-## 9. Record completion
-
-Record the actual release date, tag/commit, artifact hashes, and release URLs in your
-release log. Update the changelog's pending-publication wording and the README's
-installation status after successful publication. A subsequent source change belongs
-in the next release; keep the published tag and files intact.
-
-You are finished when users can download/install the chosen artifact, run `codelens
---help`, initialize their own configuration, and follow the documented workflow.
-For later releases, update the version/changelog, run the local checks, and repeat
-the same manual publishing steps. CI is not a prerequisite.
+For later builds or version changes, use the [maintenance reference](release-maintenance.md).
+Publishing reference: [PyPA packaging guide](https://packaging.python.org/en/latest/tutorials/packaging-projects/).
