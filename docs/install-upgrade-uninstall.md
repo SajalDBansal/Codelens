@@ -1,26 +1,33 @@
 # Install, upgrade, and uninstall CodeLens
 
-Use Windows x64 and Python 3.12 for the recommended setup; supported Python
-versions are 3.11–3.13. This guide uses PowerShell. No terminal activation or
-PowerShell execution-policy change is needed.
+The published package is [codelens-rag](https://pypi.org/project/codelens-rag/).
+The command is `codelens`, and the Python import is `graph_rag`.
+Use Windows x64 and Python 3.11–3.13; Python 3.12 is recommended. These examples
+use PowerShell and do not require activation or an execution-policy change.
 
-## Install a downloaded wheel
+## Install from PyPI
 
-A wheel is the installable `.whl` file attached to a CodeLens release. It does not
-bundle Python or all dependencies. Install it in a virtual environment:
+Create an environment in a folder you intend to keep:
 
 ```powershell
 py -3.12 -m venv .venv-codelens
-.\.venv-codelens\Scripts\python.exe -m pip install "C:\Downloads\codelens-0.1.0-py3-none-any.whl"
+.\.venv-codelens\Scripts\python.exe -m pip install codelens-rag
 .\.venv-codelens\Scripts\codelens.exe --help
 .\.venv-codelens\Scripts\codelens.exe init
 ```
 
-Replace the download path. Run `init` once to save your API key and model choices.
-The API key goes into the OS credential store. Model requests need internet access
-and can incur OpenAI charges. The graph itself is stored locally.
+To install the first release exactly, use `codelens-rag==0.1.0` as the package name
+in the install command. `init` saves your model choices and stores your OpenAI key
+in the OS credential store. Model requests need internet access and can incur
+charges. The graph is stored locally; no Docker or database server is needed.
 
-Save a session alias before switching to another project:
+If the environment already has an earlier development installation of this same
+project named `codelens` or `graph-rag-reviewer`, uninstall that old distribution
+before installing `codelens-rag`. They share modules and command names.
+
+## Use it from a project folder
+
+In the same PowerShell terminal, save an alias before changing directories:
 
 ```powershell
 Set-Alias -Name codelens -Value (Resolve-Path '.venv-codelens\Scripts\codelens.exe').Path
@@ -28,84 +35,88 @@ codelens embed "C:\Projects\my-project"
 codelens ask "Explain the entry point" --project my-project
 ```
 
-Use your actual project path and name. For a command available in new terminals,
-see the README's [tool installation options](../README.md#use-codelens-from-any-directory).
-For example, if `uv` is already installed, `uv tool install --python 3.12
-"C:\Downloads\codelens-0.1.0-py3-none-any.whl"` installs the wheel as an isolated tool;
-`uv tool update-shell` helps expose its command in new terminals.
-[uv tool documentation](https://docs.astral.sh/uv/guides/tools/).
+Use your actual project path and name. The alias lasts for this terminal session.
+For a command available in new terminals, use the README's
+[tool installation options](../README.md#use-codelens-from-any-directory).
 
-## Install from PyPI after the release is published
+If you already use uv, it can create and manage the tool environment:
 
-These commands are for the maintainer-owned CodeLens package after its PyPI name
-and publication are confirmed. Until then, use the wheel or the [source setup](04-setup-and-first-run.md).
+```sh
+uv tool install --python 3.12 codelens-rag
+uv tool update-shell
+codelens init
+```
+
+Follow any shell instructions printed by uv and reopen the terminal if needed.
+See [uv's tool documentation](https://docs.astral.sh/uv/guides/tools/).
+
+## Install a downloaded wheel
+
+A wheel is the installable `.whl` file on the
+[PyPI download page](https://pypi.org/project/codelens-rag/0.1.0/#files).
+It does not bundle Python or all dependencies. In a new environment:
 
 ```powershell
 py -3.12 -m venv .venv-codelens
-.\.venv-codelens\Scripts\python.exe -m pip install "codelens==0.1.0"
+.\.venv-codelens\Scripts\python.exe -m pip install "C:\Downloads\codelens_rag-0.1.0-py3-none-any.whl"
 .\.venv-codelens\Scripts\codelens.exe init
 ```
 
-With `uv`, the equivalent is `uv tool install --python 3.12 codelens`. If the
-published distribution name changes, replace the install name; the CLI can still
-be called `codelens`.
+Replace the download path. If the environment already exists, skip creating it.
+For an editable source installation and the included examples, see
+[Setup and first run](04-setup-and-first-run.md#optional-install-the-source-for-development).
 
 ## Upgrade the same installation
 
-Close active CodeLens commands first. Read the new version's changelog and back
-up the entire project `.codelens` directory before a release that changes storage.
-Also keep a copy of your user configuration if you want to restore its settings.
-
-For a package installed from PyPI:
+Close active CodeLens commands and read the [changelog](../CHANGELOG.md). Before
+installing a release that changes graph storage, back up each project's entire
+`.codelens` directory and retain your user configuration if you need to restore it.
 
 ```powershell
-.\.venv-codelens\Scripts\python.exe -m pip install --upgrade codelens
+.\.venv-codelens\Scripts\python.exe -m pip install --upgrade codelens-rag
 .\.venv-codelens\Scripts\codelens.exe doctor
 ```
 
-For a downloaded wheel, use `python -m pip install --upgrade "C:\Downloads\NEW-WHEEL.whl"`
-with the Python executable from the same environment. Replace `NEW-WHEEL.whl` with
-the actual newer file. For a PyPI-backed uv tool installation, use `uv tool upgrade
-codelens`; for a wheel-backed tool installation, reinstall from the new wheel with
+For a uv installation, use `uv tool upgrade codelens-rag`. For a downloaded wheel,
+use the same environment's Python with `-m pip install --upgrade` and the new wheel
+path. A wheel-backed uv tool can be reinstalled with
 `uv tool install --force --python 3.12 "C:\Downloads\NEW-WHEEL.whl"`.
 
-Upgrading package files does not itself re-embed your projects. Existing saved
-settings remain in use. If you change the embedding model or dimensions, follow
-the CLI's keep/rebuild/cancel prompt; changing the answer model alone does not
-require new embeddings. Future graph-format changes need the migration directions
-in that release's notes.
+Upgrading package files does not itself re-embed projects. Existing settings remain
+in use. Changing the embedding model or dimensions invokes the CLI's
+keep/rebuild/cancel workflow; changing only the answer model does not require new
+embeddings. Follow the release's migration guidance for future graph-format changes.
 
 ## Uninstall the package
 
 Use the same installer and environment used for installation:
 
 ```powershell
-.\.venv-codelens\Scripts\python.exe -m pip uninstall codelens
+.\.venv-codelens\Scripts\python.exe -m pip uninstall codelens-rag
 ```
 
-For a uv tool installation, use `uv tool uninstall codelens` instead. Remove any
-alias or symbolic link you created separately if it now points to a missing command.
+For a uv tool installation, use `uv tool uninstall codelens-rag`. Remove any alias
+or symbolic link you created separately if it points to a missing command.
 
-Uninstalling the package leaves these user-owned files and credentials intact:
+Uninstalling leaves your data intact:
 
 | Item | Location / behavior |
 | --- | --- |
 | Settings and project registry | `%USERPROFILE%\.codelens`, unless `--config-dir` selected another directory. |
-| Project graph, source excerpts, and model history | Each project's `.codelens` directory. |
+| Graph, source excerpts, and model history | Each project's `.codelens` directory. |
 | OpenAI key | OS credential store, service `codelens.openai`. |
-| Project ignore entry | The `.codelens/` entry in the project's `.gitignore`. |
+| Git ignore entry | The `.codelens/` entry in each project's `.gitignore`. |
 
-For optional data cleanup, close running commands and inspect the intended folders
-before removing them in File Explorer. `codelens projects remove NAME`, run before
-uninstalling, only unregisters the project; it does not erase its graph. Removing
-a graph folder means it must be rebuilt to query that project again.
+For optional data cleanup, close running commands and inspect the folders before
+removing them. `codelens projects remove NAME`, run before uninstalling, only
+unregisters the project; it does not erase its graph. Deleting a graph means it
+must be rebuilt before querying that project again.
 
-To remove a saved key as well, locate the `codelens.openai` entry in Windows
-Credential Manager. Its account is a hash of the configuration directory, so
-multiple `--config-dir` profiles can have separate entries. Remove only entries
-belonging to profiles you are retiring. This removes the local saved key; revoking
-the actual OpenAI key is a separate account action. The CLI currently has no
-single command that deletes every profile, graph, and credential.
+To remove a saved key, locate the `codelens.openai` entry in Windows Credential
+Manager. Its account is a hash of the configuration directory; separate
+`--config-dir` profiles can have separate entries. Remove only entries belonging
+to profiles you are retiring. Deleting the local saved key does not revoke the
+key at OpenAI. There is no command that deletes every profile, graph, and credential.
 
-See the [configuration reference](06-configuration-reference.md) and
-[release guide](releasing.md) for details.
+See the [configuration reference](06-configuration-reference.md),
+[compatibility](compatibility.md), and [changelog](../CHANGELOG.md).

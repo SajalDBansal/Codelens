@@ -1,65 +1,44 @@
 # 04 - Setup and first run
 
-Use Python 3.12 for the recommended Windows setup. CodeLens supports Python 3.11–3.13; Python 3.14 is excluded because of a native LadybugDB loading failure with the tested standard Windows interpreter. See [supported versions and local verification](compatibility-and-ci.md) for the tested dependency baseline and verification record. Other platforms still need release verification. You need internet access for installation and model requests, an OpenAI API key, and a working OS credential-store backend.
+CodeLens is available on PyPI as [codelens-rag](https://pypi.org/project/codelens-rag/).
+Install that package, then run the `codelens` command. Use Windows x64 with Python
+3.11–3.13; Python 3.12 is recommended. See [compatibility](compatibility.md) for
+tested versions and platform limits. Installation and model requests need internet
+access, and model requests require your own OpenAI key.
 
-## 1. Open the package source
+## 1. Install the package
 
-If you downloaded a release `.whl` file, use the [release installation guide](install-upgrade-uninstall.md)
-instead. That guide also covers upgrades, uninstalling, and saved-data cleanup.
-The steps here are for installing from a source checkout.
-
-```sh
-git clone https://github.com/SajalDBansal/codelens.git
-cd codelens
-```
-
-If you already have the code, open the directory containing `pyproject.toml`. Its local folder name can still be `rag-pipeline-package`; installation uses the metadata name `codelens`.
-
-## 2. Install into an isolated Python environment
-
-A virtual environment is a directory containing an interpreter environment and its dependencies. It keeps the package's libraries separate from other projects.
-
-**PowerShell:**
+Open PowerShell in a folder where you want to keep the Python environment:
 
 ```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
-.\.venv\Scripts\codelens.exe --help
-Set-Alias -Name codelens -Value (Join-Path (Get-Location).Path '.venv\Scripts\codelens.exe')
+py -3.12 -m venv .venv-codelens
+.\.venv-codelens\Scripts\python.exe -m pip install codelens-rag
+.\.venv-codelens\Scripts\codelens.exe --help
+Set-Alias -Name codelens -Value (Join-Path (Get-Location).Path '.venv-codelens\Scripts\codelens.exe')
 ```
 
-The alias works for this terminal session, including after changing directories. Direct executable calls avoid needing to change PowerShell's script execution policy. To make `codelens` available in new terminals without activation, follow the README's [persistent command and symlink setup](../README.md#use-codelens-from-any-directory).
+A virtual environment keeps these dependencies separate from other Python projects.
+The alias works in this terminal, including after you change folders. Direct
+executable calls do not require activating PowerShell scripts. For a command that
+also works in new terminals, see [installation options](install-upgrade-uninstall.md).
 
-**Git Bash on Windows**, using a Python 3.12 interpreter:
+If this environment already contains an earlier development copy of this project
+named `codelens` or `graph-rag-reviewer`, remove that old distribution first. It
+shares Python modules with `codelens-rag`. Your saved settings and graphs remain.
 
-```bash
-python -m venv .venv
-source .venv/Scripts/activate
-python -m pip install -e .
-codelens --help
-```
-
-**macOS/Linux equivalent:**
-
-```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
-```
-
-Native dependencies and keyring setup must be checked on those platforms, particularly headless Linux. `-e` means editable: source edits take effect without reinstalling. Use `python -m pip install .` for a normal source install. Keep the environment active, use its absolute executable path, or use the optional tool installation described in the [package README](../README.md).
-
-If the same environment contains the old distribution, run `python -m pip uninstall graph-rag-reviewer` before reinstalling this renamed package. User/project data lives outside the distribution and is retained.
-
-## 3. Configure once
+## 2. Configure once
 
 ```sh
 codelens init
 ```
 
-The prompts ask for a hidden API key, an embedding model, and an answer/reasoning model. Setup saves all recommended settings in `~/.codelens/config.json`; Windows uses `%USERPROFILE%\.codelens`. The key goes into the OS credential store, not JSON.
+The prompts ask for your API key using hidden input, then an embedding model and
+an answer/reasoning model. Settings go in `~/.codelens/config.json`; Windows uses
+`%USERPROFILE%\.codelens`. The key goes in the OS credential store, outside JSON.
 
-`init` does not contact OpenAI. It does not create a project in the current folder. Running it again preserves advanced settings; cancellation before completing setup leaves unsaved changes unapplied.
+`init` does not contact OpenAI or initialize the current folder as a project.
+Running it again preserves advanced settings. Cancelling before completion leaves
+unsaved changes unapplied. No `.env` file is needed.
 
 ```sh
 codelens doctor
@@ -67,41 +46,66 @@ codelens config list
 codelens config check
 ```
 
-`doctor` checks local configuration and paths. `config check` makes an authenticated model-list request, without repository content. It checks access and listed model IDs, not a full embedding or completion request. There is no `.env` setup step.
+`doctor` checks local configuration and paths. `config check` makes an authenticated
+model-list request without sending repository content. It checks credentials and
+listed model IDs, not a complete embedding or answer request.
 
-## 4. Choose a first test
+## 3. Index a project and ask a question
 
-To test the local mechanics **without OpenAI requests**, run this from the source checkout:
-
-```sh
-python scripts/smoke_local.py
-```
-
-Use your environment's Python; in unactivated PowerShell, replace `python` with `.\.venv\Scripts\python.exe`. The script uses fake model outputs but real parsing, Ladybug storage, incremental updates, and retrieval. Installation or parser initialization can still need downloads on a clean computer.
-
-For the complete **model-backed** workflow:
+Use a repository already present on your computer. Replace the example path:
 
 ```sh
-codelens embed examples/smoke_repo
-codelens status --project smoke_repo
-codelens retrieve "Where is the discount validated?" --project smoke_repo
-codelens ask "Is tax applied before or after the discount?" --project smoke_repo --show-context
+codelens projects add "C:\Projects\my-app" --name my-app
+codelens embed --project my-app
+codelens status --project my-app
+codelens retrieve "Where is authentication checked?" --project my-app
+codelens ask "Explain the main entry point" --project my-app --show-context
 ```
 
-These commands use your API key and can incur charges. The answer should be checked against `checkout.py` and `pricing.py`; exact wording is not fixed.
+`projects add` registers a location without model requests. Project initialization
+adds `.codelens/` to the root `.gitignore`, creating the file if needed. The graph
+and project metadata are stored under that project's `.codelens` directory.
+Ignore rules do not untrack files already committed to Git.
 
-## 5. Index your own project
+`embed`, `retrieve`, and `ask` use your OpenAI account and can incur charges.
+`retrieve` shows evidence; `ask` also generates an answer. Check the answer against
+the cited source and use `--show-context` to inspect the supplied evidence.
+
+## 4. Work with later source changes
+
+Repeating `embed` on unchanged input reuses valid stored work. By default, `ask`
+and `retrieve` check the source for changes and update the graph before searching.
+If an update fails, fix the reported problem and retry.
+
+Use `--no-update` only when you intentionally want to query the stored version.
+Switch among registered projects with `--project`; list them with `codelens projects list`.
+
+## Optional: install the source for development
+
+The source checkout includes the tests, pipeline verification scripts, and demo
+project. These supporting files are not installed as part of the runtime wheel.
 
 ```sh
-codelens projects add "/path/to/your-project" --name demo
-codelens embed --project demo
-codelens ask "Explain the entry point" --project demo
+git clone https://github.com/SajalDBansal/codelens.git
+cd codelens
 ```
 
-Replace the path. `projects add` registers it without model requests. Initialization adds `.codelens/` to the root `.gitignore`, creating that file if absent. The graph and manifest are saved under that project. Git ignore rules do not remove files already committed.
+In PowerShell from that checkout:
 
-Run embed again unchanged: the graph can reuse its existing work. Edit one function and ask again: the default question flow checks and updates before retrieval. See the [walkthrough](22-end-to-end-walkthrough.md) for the exact sequence.
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\codelens.exe --help
+Set-Alias -Name codelens -Value (Join-Path (Get-Location).Path '.venv\Scripts\codelens.exe')
+```
 
-**Source:** [config_commands.py](../graph_rag/cli/config_commands.py), [settings.py](../graph_rag/cli/settings.py), [smoke_local.py](../scripts/smoke_local.py).
+`-e` makes the installation editable, so changes to the source take effect without
+reinstalling. Use this environment's Python and CLI when testing changes. Follow
+[Testing](18-testing.md) for checks without OpenAI requests, or the
+[end-to-end walkthrough](22-end-to-end-walkthrough.md) to try the bundled demo with
+your configured models. Other shell examples are in the [README](../README.md).
+
+**Source:** [config commands](../graph_rag/cli/config_commands.py),
+[settings](../graph_rag/cli/settings.py), [project workflow](../graph_rag/cli/workflow.py).
 
 [Previous](03-what-this-product-does.md) | [Guide](README.md) | [Next: Commands](05-the-two-commands.md)

@@ -13,7 +13,14 @@ codelens ask "How does authentication work?" --project my-project
 codelens retrieve "Where is the access token validated?" --project my-project
 ```
 
-The commands above work after the [local installation](#install-and-run-locally). The Python distribution and terminal command are named `codelens`; the import package remains `graph_rag`. This checkout is a beta, and these instructions install your local source rather than assuming a public PyPI release exists.
+Install the Python distribution **`codelens-rag`**, then use the **`codelens`** command. The Python import remains `graph_rag`. The initial beta, [version 0.1.0](https://pypi.org/project/codelens-rag/0.1.0/), is published on PyPI.
+
+```sh
+python -m pip install codelens-rag
+codelens init
+```
+
+Use a virtual environment with Python 3.11–3.13; Python 3.12 is recommended. See the [installation instructions](#install-and-run-locally) for a complete setup. Use `codelens-rag` for package installation and `codelens` for commands.
 
 ## Learn the whole system
 
@@ -79,17 +86,25 @@ The build operations can interleave; the diagram describes their responsibilitie
 
 ## Install and run locally
 
-### Install a release file
+### Install from PyPI
 
-For a downloaded wheel, installation, upgrades, and removal, follow the
-[release installation guide](https://github.com/SajalDBansal/codelens/blob/HEAD/docs/install-upgrade-uninstall.md). It also explains
-which settings, credentials, and graph files remain after uninstalling. PyPI
-installation instructions there apply only after the maintainer confirms publication;
-this checkout does not assume that a public package named `codelens` is already ours.
+On Windows, open PowerShell and create an isolated environment:
 
-The instructions below install from source.
+```powershell
+py -3.12 -m venv .venv-codelens
+.\.venv-codelens\Scripts\python.exe -m pip install codelens-rag
+.\.venv-codelens\Scripts\codelens.exe init
+```
 
-Use **Python 3.12** for the recommended setup. The supported Python range is **3.11–3.13**, with Windows x64 compatibility checks. Python 3.14 is excluded because the pinned LadybugDB wheel failed to load with the tested standard Windows Python installation. See [supported versions and local verification](https://github.com/SajalDBansal/codelens/blob/HEAD/docs/compatibility-and-ci.md) for exact test results, dependency versions, and local validation instructions. Release checks run manually; CI is not required. Other platforms still need release verification.
+For upgrades, removal, downloaded wheels, and commands available from any folder,
+see [Install, upgrade, and uninstall](https://github.com/SajalDBansal/codelens/blob/HEAD/docs/install-upgrade-uninstall.md).
+The graph and settings live outside the installed package and remain after uninstalling.
+
+### Install from source
+
+Use the source checkout to change the implementation or run the bundled tests and examples.
+
+Use **Python 3.12** for the recommended setup. The supported Python range is **3.11–3.13**, with Windows x64 compatibility checks. Python 3.14 is excluded because the pinned LadybugDB wheel failed to load with the tested standard Windows Python installation. See [supported versions and local verification](https://github.com/SajalDBansal/codelens/blob/HEAD/docs/compatibility.md) for exact test results, dependency versions, and local validation instructions. Checks run locally. Other platforms still need verification.
 
 You also need internet access to install dependencies and use OpenAI, an OpenAI API key with access to your selected models, and a working OS credential store. Indexing and questions can incur API charges. The package reads local folders; clone or download a repository yourself before embedding it.
 
@@ -155,10 +170,10 @@ The `-e` option makes this an editable installation: changes to the package sour
 
 For a persistent command outside an activated environment, use one of the options in [Use `codelens` from any directory](#use-codelens-from-any-directory).
 
-If this same environment contains the earlier distribution named `graph-rag-reviewer`, uninstall it before installing the renamed package:
+If this same environment contains an earlier development copy of this project named `codelens` or `graph-rag-reviewer`, uninstall that copy before installing `codelens-rag`. These distributions share the same Python modules and command names:
 
 ```sh
-python -m pip uninstall graph-rag-reviewer
+python -m pip uninstall codelens graph-rag-reviewer
 python -m pip install -e .
 ```
 
@@ -401,16 +416,16 @@ During indexing, eligible code/document chunks are sent to OpenAI for embeddings
 
 ## Development and checks
 
-To prepare a release manually, follow the [release guide](https://github.com/SajalDBansal/codelens/blob/HEAD/docs/releasing.md) and
-[changelog](https://github.com/SajalDBansal/codelens/blob/HEAD/CHANGELOG.md). `scripts/prepare_release.py` runs local tests, builds
-distributions, checks a fresh wheel installation, and writes checksums. It does not
-publish anything. CI is not required.
+See the [testing guide](https://github.com/SajalDBansal/codelens/blob/HEAD/docs/18-testing.md)
+for verification and the [changelog](https://github.com/SajalDBansal/codelens/blob/HEAD/CHANGELOG.md)
+for release changes. The two scripts in `scripts/` test the pipeline's local graph
+and recovery behavior; installation uses pip or uv directly.
 
 From the source checkout, using its Python environment:
 
 ```sh
 python -m pip install -e ".[dev]"
-python -m pytest -q
+python -m pytest -q tests
 python scripts/smoke_local.py
 ```
 
@@ -448,7 +463,7 @@ The main modules follow the workflow:
 - **Incomplete answers:** inspect `retrieve` or `ask --show-context`, ask a more specific question, or adjust retrieval settings. Static graph links and generated citations are not proofs of runtime behavior.
 - **Progress and history:** the CLI prints indexing progress and completed answers. Token-by-token answer streaming, a web graph viewer, persistent conversation history, and automatic graph pruning are not implemented.
 
-This beta is a local developer tool. The current release verification covers Windows/Python 3.12 and small demo graphs; it is not a large-repository performance guarantee.
+This beta is a local developer tool. Compatibility checks cover Windows x64/Python 3.11–3.13; the published-package installation was checked on Python 3.12. Small demo graphs do not establish a large-repository performance guarantee.
 
 ## License and project links
 

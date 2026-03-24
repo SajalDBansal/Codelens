@@ -1,9 +1,15 @@
 # Changelog
 
-This file records user-visible changes. Version `0.1.0` is prepared for release;
-publication has not yet been confirmed.
+This file records user-visible changes to CodeLens, distributed as `codelens-rag`.
 
-## 0.1.0 — First release candidate
+## Unreleased
+
+- Refined installation and pipeline documentation for the published package.
+- Removed temporary publishing helpers, release checklists, and work-plan material from the repository.
+
+## 0.1.0 — 22 October 2026
+
+Initial beta, published as [codelens-rag on PyPI](https://pypi.org/project/codelens-rag/0.1.0/). Install with `python -m pip install codelens-rag`; run it with `codelens`.
 
 ### Included
 
@@ -28,8 +34,8 @@ publication has not yet been confirmed.
 - Each question uses one project. Static relationships and model-generated citations can be incomplete; inspect the evidence.
 - Token-by-token answer streaming, a website, persistent chat history, and automatic deletion of old graph generations are not included.
 
-The distribution is `codelens`, the Python import is `graph_rag`, and the legacy
+The distribution is `codelens-rag`, the command is `codelens`, the Python import is `graph_rag`, and the legacy
 `graph-rag-index` / `graph-rag-ask` launchers remain available. Older development
-installations named `graph-rag-reviewer` should be removed from the same Python
+installations named `codelens` or `graph-rag-reviewer` should be removed from the same Python
 environment before installing CodeLens. Removing the package does not erase saved
 settings, credentials, or project graphs.

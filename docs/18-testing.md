@@ -2,7 +2,7 @@
 
 There are different questions to test: does the code behave correctly, does local storage survive an update, does retrieval find expected evidence, and does a model produce a good answer? One passing smoke test cannot establish all four.
 
-The [compatibility and local verification guide](compatibility-and-ci.md) explains the supported Python versions, reproducible dependencies, and local checks. GitHub Actions and CI/CD setup are deferred. Use its constrained install command when reproducing the tested Windows baseline.
+The [compatibility reference](compatibility.md) lists supported Python versions, tested dependencies, and local checks. Use its constrained install command when reproducing the tested Windows baseline.
 
 ## Automated tests without OpenAI requests
 
@@ -10,7 +10,7 @@ From the source checkout, in its Python environment:
 
 ```sh
 python -m pip install -e ".[dev]"
-python -m pytest -q
+python -m pytest -q tests
 ```
 
 In unactivated PowerShell use `.\.venv\Scripts\python.exe` instead of `python`. Tests use temporary graphs and model/credential substitutes. Installing dependencies or initializing parsers on a clean machine may require network access, but the test model behavior does not require a real OpenAI key.
@@ -81,7 +81,7 @@ Run `ask --show-context` and compare the answer with the actual source. Ask both
 
 ## Distribution checks
 
-A wheel installation should provide `codelens --help` and `python -m graph_rag --help`. A source archive should include these docs, tests, scripts, evaluation cases, and the example files referenced here. The manifest includes those support files in the source distribution; the runtime wheel contains the import package plus its metadata/license rather than the whole repository.
+A wheel installation should provide `codelens --help` and `python -m graph_rag --help`. A source archive should include these docs, tests, the two pipeline verification scripts, evaluation cases, and the example files referenced here. The manifest includes those support files in the source distribution; the runtime wheel contains the import package plus its metadata/license rather than the whole repository.
 
 **Source:** [tests](../tests), [smoke_local.py](../scripts/smoke_local.py), [run_eval.py](../evals/run_eval.py), [questions.smoke.json](../evals/questions.smoke.json).
 

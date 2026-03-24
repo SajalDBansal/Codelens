@@ -50,7 +50,7 @@ The bundled checkout example is useful for a smoke run; do not treat success on 
 
 ```sh
 python -m pip install -e ".[dev]"
-python -m pytest -q
+python -m pytest -q tests
 python scripts/smoke_local.py
 ```
 

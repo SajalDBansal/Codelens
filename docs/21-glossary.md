@@ -61,4 +61,4 @@
 
 Read the [walkthrough](22-end-to-end-walkthrough.md) to see these terms applied to the same small example instead of learning them in isolation.
 
-[Previous](20-limits-and-roadmap.md) | [Guide](README.md) | [Next: Walkthrough](22-end-to-end-walkthrough.md)
+[Previous](20-limitations.md) | [Guide](README.md) | [Next: Walkthrough](22-end-to-end-walkthrough.md)

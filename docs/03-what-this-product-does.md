@@ -1,6 +1,6 @@
 # 03 - What CodeLens does today
 
-CodeLens is a local command-line application for exploring a codebase with graph-assisted retrieval. It is installed as the Python distribution `codelens`; its import package is still named `graph_rag`.
+CodeLens is a local command-line application for exploring a codebase with graph-assisted retrieval. It is installed as the Python distribution `codelens-rag` (terminal command: `codelens`); its import package is still named `graph_rag`.
 
 ## A normal session
 

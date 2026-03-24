@@ -3,7 +3,7 @@
 # Other entries record their resolved dependencies; they are NOT new app dependencies.
 # Use: python -m pip install -c constraints/tested-windows.txt ".[dev]"
 # This file is only used when passed with -c; normal installations use package ranges.
-# See docs/compatibility-and-ci.md before updating this baseline.
+# See docs/compatibility.md before updating this baseline.
 
 annotated-doc==0.0.5
 annotated-types==0.8.0

@@ -1,6 +1,6 @@
 # Understand CodeLens
 
-This guide explains the **current local CodeLens package**, version 0.1.0: what problem it solves, how to run it, how information moves through it, and where to find the implementation. It assumes basic familiarity with files, functions, and a terminal. You do not need prior knowledge of AI, embeddings, or graph databases.
+This guide explains the **published local CodeLens package**, [codelens-rag 0.1.0](https://pypi.org/project/codelens-rag/0.1.0/): what problem it solves, how to run it, how information moves through it, and where to find the implementation. It assumes basic familiarity with files, functions, and a terminal. You do not need prior knowledge of AI, embeddings, or graph databases.
 
 CodeLens reads a local project, stores a searchable graph in that project's `.codelens` directory, and retrieves evidence for questions. It uses embedded LadybugDB and calls OpenAI for embeddings and generated text. User preferences are saved in `~/.codelens/config.json`; the API key is held separately in the OS credential store.
 
@@ -14,7 +14,7 @@ CodeLens reads a local project, stores a searchable graph in that project's `.co
 | Tune it or diagnose a result | [Configuration](06-configuration-reference.md) -> [Retrieval](16-retrieval.md) -> [Troubleshooting](19-troubleshooting.md) |
 | Change the implementation | [Architecture](07-architecture.md) -> [Testing](18-testing.md) -> [Contributor guide](23-contributor-guide.md) |
 | Install or maintain a released copy | [Install, upgrade, uninstall](install-upgrade-uninstall.md) |
-| Prepare and publish a release | [Manual release guide](releasing.md) -> [Release notes](release-notes-0.1.0.md) -> [Changelog](../CHANGELOG.md) |
+| Check release changes and support | [Changelog](../CHANGELOG.md) -> [Compatibility](compatibility.md) -> [Current limitations](20-limitations.md) |
 
 For a complete read, follow the numbered chapters. Each chapter starts with the idea, explains the current implementation, gives examples, and links to the relevant source. The [glossary](21-glossary.md) is available whenever a term is unfamiliar.
 
@@ -66,14 +66,14 @@ There is one local CLI process for an operation, not a distributed service. The 
 | [17. Generation](17-generation.md) | How are folder summaries and cited answers produced? |
 | [18. Testing](18-testing.md) | What can be checked without OpenAI, and how is retrieval evaluated? |
 | [19. Troubleshooting](19-troubleshooting.md) | How do I diagnose setup, indexing, and answer problems? |
-| [20. Limits and roadmap](20-limits-and-roadmap.md) | What is supported, uncertain, or still future work? |
+| [20. Current limitations](20-limitations.md) | What does the published package support, and what are its boundaries? |
 | [21. Glossary](21-glossary.md) | What do the technical words mean? |
 | [22. End-to-end walkthrough](22-end-to-end-walkthrough.md) | What happens to one real function and one real question? |
 | [23. Contributor guide](23-contributor-guide.md) | Where should a developer make and verify a change? |
 
 ## How to read examples honestly
 
-For release maintenance, see [Supported versions and local verification](compatibility-and-ci.md). It explains the dependency baseline, local checks, and how to update them. GitHub Actions and CI/CD setup are deferred.
+For Python/platform support and dependency versions, see [Compatibility](compatibility.md). The [changelog](../CHANGELOG.md) records published changes; [Testing](18-testing.md) explains how to verify implementation changes locally.
 
 The running example is [examples/smoke_repo](../examples/smoke_repo): checkout adds prices, applies a discount, then tax. Commands marked as model-backed use your OpenAI account. The offline smoke script substitutes deterministic model results and tests mechanics rather than answer quality.
 

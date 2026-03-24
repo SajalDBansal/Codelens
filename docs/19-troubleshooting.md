@@ -83,4 +83,4 @@ A changed answer model does not rewrite existing summaries. Optional summary fai
 
 **Source:** [workflow.py](../graph_rag/cli/workflow.py), [state.py](../graph_rag/cli/state.py), [projects.py](../graph_rag/cli/projects.py), [local_connection.py](../graph_rag/storage/local_connection.py).
 
-[Previous](18-testing.md) | [Guide](README.md) | [Next: Limits](20-limits-and-roadmap.md)
+[Previous](18-testing.md) | [Guide](README.md) | [Next: Limits](20-limitations.md)
