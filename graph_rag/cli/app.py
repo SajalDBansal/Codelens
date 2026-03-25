@@ -354,6 +354,14 @@ def retrieve(
     run_workflow(options, project, db, config_dir)
 
 
+@app.command(rich_help_panel="Codebase")
+def compact(project: Project = None):
+    """Reclaim obsolete vector segments and source snapshots from the active index."""
+    from .maintenance import compact_project
+
+    show(compact_project(resolve_project(project)))
+
+
 def main(argv=None):
     configure_console()
     try:

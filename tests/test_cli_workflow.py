@@ -383,6 +383,26 @@ def test_readonly_inspection_does_not_create_database(tmp_path):
     assert not missing.parent.exists()
 
 
+def test_compact_preserves_fresh_project_evidence_without_model_calls(repo, configured, models):
+    project = embed(repo)
+    manifest = project.manifest_path.read_bytes()
+    with settings.engine_settings(configured), GraphStore(project.database) as store:
+        before = retriever.retrieve("checkout", store)
+        counts = store.stats()
+    calls = list(models)
+
+    app.main(["compact", "--project", project.id])
+
+    assert models == calls
+    assert project.manifest_path.read_bytes() == manifest
+    with settings.engine_settings(configured), GraphStore(project.database) as store:
+        assert store.check_integrity()["vectors_checked"] > 0
+        assert store.stats() == counts
+        after = retriever.retrieve("checkout", store)
+    assert after.context_text == before.context_text
+    assert [item.entity.id for item in after.items] == [item.entity.id for item in before.items]
+
+
 @pytest.mark.parametrize(
     "model,expected",
     [
