@@ -1,69 +1,8 @@
-"""Typed LadybugDB node/relationship tables and model conversion helpers.
-
-Code, documents, folders, files, interfaces, and summaries retain their logical
-identifiers. Embeddings are fixed-width FLOAT arrays. Search uses core cosine
-functions plus portable BM25; no downloadable native extensions are required.
-"""
-
-SCHEMA_VERSION = 1
-
-
-def table_statements(dimensions: int) -> list[str]:
-    """Typed graph tables; one database belongs to one source repository."""
-    if dimensions <= 0:
-        raise ValueError("EMBEDDING_DIM must be positive")
-    vector = f"FLOAT[{int(dimensions)}]"
-    embedding = f"embedding {vector}, embeddingHash STRING, embeddingInputHash STRING"
-    nodes = {
-        "Folder": "path STRING PRIMARY KEY, hash STRING",
-        "File": "path STRING PRIMARY KEY, hash STRING, language STRING",
-        "CodeEntity": "id STRING PRIMARY KEY, kind STRING, name STRING, filePath STRING, "
-        "language STRING, startLine INT64, endLine INT64, code STRING, docstring STRING, "
-        "contentHash STRING, unresolvedCalls STRING[], unresolvedExtends STRING[], "
-        "unresolvedTypes STRING[], externalCalls STRING[], externalTypes STRING[], "
-        "isRecursive BOOL, ownerName STRING, callOwnerHints STRING[], callArityHints STRING[], "
-        "paramCount INT64, flexibleArity BOOL, " + embedding,
-        "Doc": "id STRING PRIMARY KEY, filePath STRING, docType STRING, title STRING, "
-        "headingPath STRING, level INT64, startLine INT64, endLine INT64, text STRING, "
-        "contentHash STRING, " + embedding,
-        "Summary": "id STRING PRIMARY KEY, path STRING, text STRING, entityCount INT64, "
-        "contentHash STRING, " + embedding,
-        "Interface": "id STRING PRIMARY KEY, kind STRING, value STRING",
-        "IndexMeta": "id STRING PRIMARY KEY, model STRING, dimensions INT64, "
-        "schemaVersion INT64, repoRoot STRING",
-    }
-    statements = [
-        f"CREATE NODE TABLE IF NOT EXISTS {name} ({fields})" for name, fields in nodes.items()
-    ]
-    statements += [
-        "CREATE REL TABLE GROUP IF NOT EXISTS CONTAINS (FROM Folder TO Folder, "
-        "FROM Folder TO File, FROM File TO CodeEntity, FROM CodeEntity TO CodeEntity, "
-        "FROM File TO Doc, FROM Doc TO Doc, FROM Folder TO Summary, "
-        "confidence DOUBLE, resolvedBy STRING)",
-        "CREATE REL TABLE IF NOT EXISTS IMPORTS (FROM File TO File)",
-        "CREATE REL TABLE IF NOT EXISTS MENTIONS (FROM Doc TO CodeEntity)",
-        "CREATE REL TABLE GROUP IF NOT EXISTS REFERENCES "
-        "(FROM CodeEntity TO Interface, FROM Doc TO Interface)",
-    ]
-    statements += [
-        f"CREATE REL TABLE IF NOT EXISTS {kind} "
-        "(FROM CodeEntity TO CodeEntity, confidence DOUBLE, resolvedBy STRING)"
-        for kind in ("CALLS", "EXTENDS", "USES_TYPE")
-    ]
-    return statements
-
-
-SUMMARY_RETURN_FIELDS = """
-    s.id          AS id,
-    s.path        AS path,
-    s.text        AS text,
-    s.entityCount AS entityCount,
-    s.contentHash AS contentHash
-"""
+"""Conversion between Python models and SQLite node properties."""
 
 
 def summary_to_properties(summary) -> dict:
-    """Turn a FolderSummary into LadybugDB properties."""
+    """Turn a FolderSummary into stored properties."""
     return {
         "id": summary.id,
         "path": summary.path,
@@ -75,7 +14,7 @@ def summary_to_properties(summary) -> dict:
 
 
 def record_to_summary(record):
-    """Turn a row from LadybugDB back into a FolderSummary."""
+    """Turn a row from storage back into a FolderSummary."""
     from ..models import FolderSummary
 
     return FolderSummary(
@@ -88,30 +27,12 @@ def record_to_summary(record):
 
 
 # ---------------------------------------------------------------------------
-# Translating between our Python models and LadybugDB properties
+# Translating between our Python models and stored properties
 # ---------------------------------------------------------------------------
-
-# The list of properties we read back for a CodeEntity. We write it out once
-# here so every query returns the same shape and `record_to_entity()` below
-# always works. Note that `embedding` is deliberately NOT in this list:
-# it is 1536 numbers per node and we never need to look at it in Python.
-ENTITY_RETURN_FIELDS = """
-    e.id          AS id,
-    e.kind        AS kind,
-    e.name        AS name,
-    e.filePath    AS filePath,
-    e.language    AS language,
-    e.startLine   AS startLine,
-    e.endLine     AS endLine,
-    e.code        AS code,
-    e.docstring   AS docstring,
-    e.contentHash AS contentHash
-"""
-
 
 def entity_to_properties(entity) -> dict:
     """
-    Turn a CodeEntity (snake_case Python) into a dict of LadybugDB properties
+    Turn a CodeEntity (snake_case Python) into a dict of stored properties
     (camelCase), ready to be handed to a query as a parameter.
     """
     return {
@@ -187,7 +108,7 @@ def parse_hint_list(rows, cast=str) -> dict:
 
 def record_to_entity(record) -> "object":
     """
-    The reverse: turn a row from LadybugDB back into a CodeEntity.
+    The reverse: turn a row from storage back into a CodeEntity.
 
     Imported here rather than at the top of the file to avoid a circular
     import (models does not import storage, and this keeps it that way).
@@ -208,22 +129,8 @@ def record_to_entity(record) -> "object":
     )
 
 
-DOC_RETURN_FIELDS = """
-    d.id          AS id,
-    d.filePath    AS filePath,
-    d.docType     AS docType,
-    d.title       AS title,
-    d.headingPath AS headingPath,
-    d.level       AS level,
-    d.startLine   AS startLine,
-    d.endLine     AS endLine,
-    d.text        AS text,
-    d.contentHash AS contentHash
-"""
-
-
 def doc_to_properties(chunk) -> dict:
-    """Turn a DocChunk (snake_case) into LadybugDB properties (camelCase)."""
+    """Turn a DocChunk (snake_case) into stored properties (camelCase)."""
     return {
         "id": chunk.id,
         "filePath": chunk.file_path,
@@ -240,7 +147,7 @@ def doc_to_properties(chunk) -> dict:
 
 
 def record_to_doc(record):
-    """Turn a row from LadybugDB back into a DocChunk."""
+    """Turn a row from storage back into a DocChunk."""
     from ..models import DocChunk
 
     return DocChunk(
@@ -275,8 +182,5 @@ def interface_id(kind: str, value: str) -> str:
 
 # The only relationship types we are willing to create between code entities.
 #
-# WHY A WHITELIST? Cypher does not let you pass a relationship type as a
-# parameter - `-[:$type]->` is not valid. So the type has to be pasted into
-# the query string, and pasting user data into a query is how injection bugs
-# happen. Checking against this fixed set first makes that impossible.
+# Public write methods accept only the supported typed graph relationships.
 ALLOWED_ENTITY_RELATIONSHIPS = {"CALLS", "CONTAINS", "EXTENDS", "USES_TYPE"}

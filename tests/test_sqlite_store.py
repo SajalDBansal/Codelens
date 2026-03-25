@@ -11,12 +11,11 @@ from graph_rag.storage import GraphStore
 def settings(monkeypatch):
     monkeypatch.setattr(config, "EMBEDDING_DIM", 3)
     monkeypatch.setattr(config, "EMBEDDING_MODEL", "test-model")
-    monkeypatch.setattr(config, "LADYBUG_BUFFER_MB", 64)
 
 
 @pytest.fixture
 def store(tmp_path, settings):
-    with GraphStore(tmp_path / "graph.lbug", repo_path=tmp_path) as db:
+    with GraphStore(tmp_path / "graph.sqlite", repo_path=tmp_path) as db:
         db.ensure_schema()
         db.save_folders([{"path": "", "hash": "root", "parent": None}])
         db.save_files(
@@ -234,25 +233,25 @@ def test_invalid_vectors_do_not_replace_valid_embeddings(store):
 
 def test_transactions_roll_back(store):
     def fail(tx):
-        tx.run("CREATE (:Folder {path:'rolled-back'})")
+        tx.run("INSERT INTO nodes(label,id,path) VALUES('Folder','rolled-back','rolled-back')")
         raise RuntimeError("test rollback")
 
-    with pytest.raises(RuntimeError, match="test rollback"):
-        with store._session() as session:
-            session.execute_write(fail)
+    with pytest.raises(RuntimeError, match="test rollback"), store._session() as session:
+        session.execute_write(fail)
     assert "rolled-back" not in store.get_folder_hashes()
 
 
 def test_repo_and_model_guards(store, monkeypatch, tmp_path):
     path = store.path
     store.close()
-    with GraphStore(path, repo_path=tmp_path / "different") as other:
-        with pytest.raises(ValueError, match="belongs to"):
-            other.ensure_schema()
+    with (
+        GraphStore(path, repo_path=tmp_path / "different") as other,
+        pytest.raises(ValueError, match="belongs to"),
+    ):
+        other.ensure_schema()
     monkeypatch.setattr(config, "EMBEDDING_MODEL", "different-model")
-    with GraphStore(path) as other:
-        with pytest.raises(ValueError, match="original settings"):
-            other.ensure_schema()
+    with GraphStore(path) as other, pytest.raises(ValueError, match="original settings"):
+        other.ensure_schema()
 
 
 def test_two_local_databases_do_not_share_symbols(tmp_path, settings):

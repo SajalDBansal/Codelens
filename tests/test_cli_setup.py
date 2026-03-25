@@ -204,13 +204,13 @@ def test_cancel_prefilled_update_does_not_save(configured, monkeypatch):
 
 def test_update_merges_concurrent_unrelated_change(configured, monkeypatch):
     def edit(*args):
-        config_commands.save_changes({"ladybug_threads": 3})
+        config_commands.save_changes({"max_interface_fanout": 3})
         return "9"
 
     monkeypatch.setattr(interactive, "edit", edit)
     app.main(["config", "update", "default_top_k"])
     saved = settings.load_settings()
-    assert saved.engine.default_top_k == 9 and saved.engine.ladybug_threads == 3
+    assert saved.engine.default_top_k == 9 and saved.engine.max_interface_fanout == 3
 
 
 def test_update_rejects_concurrent_same_setting_change(configured, monkeypatch):

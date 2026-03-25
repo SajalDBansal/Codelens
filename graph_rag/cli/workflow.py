@@ -64,7 +64,7 @@ def index_project(project: Project, *, rebuild: bool, force: bool, quiet: bool):
             target = (root / project.pending_database).resolve()
             print("Resuming the pending replacement graph.")
         else:
-            target = root / ".codelens" / "graphs" / uuid.uuid4().hex / "graph.lbug"
+            target = root / ".codelens" / "graphs" / uuid.uuid4().hex / "graph.sqlite"
             project.pending_database = database_reference(root, target)
             project.pending_model = config.EMBEDDING_MODEL
             project.pending_dimensions = config.EMBEDDING_DIM
@@ -78,7 +78,7 @@ def index_project(project: Project, *, rebuild: bool, force: bool, quiet: bool):
             arguments.append("--force")
         if quiet:
             arguments.append("--quiet")
-        # Also lock the exact database path for legacy external --db usage.
+        # Also lock the exact database path for explicit --db usage.
         with locked(Path(str(target) + ".command.lock")):
             report = index_command.main(arguments, _managed=True)
             with GraphStore(target, read_only=True) as store:

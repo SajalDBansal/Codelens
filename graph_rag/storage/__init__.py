@@ -1,4 +1,4 @@
-"""Embedded graph persistence. All Cypher and schema definitions live here."""
+"""Local SQLite graph metadata, source references and NumPy vector files."""
 
 from .graph_store import GraphStore
 

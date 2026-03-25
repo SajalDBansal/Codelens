@@ -10,16 +10,6 @@ from .state import Record
 
 class EngineOptions(Record):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False, strict=True)
-    ladybug_buffer_mb: int = Field(
-        default=config.LADYBUG_BUFFER_MB,
-        ge=32,
-        description="Database buffer budget in MB; minimum 32.",
-    )
-    ladybug_threads: int = Field(
-        default=config.LADYBUG_THREADS,
-        ge=1,
-        description="Worker threads used by the embedded database.",
-    )
     max_file_size_bytes: int = Field(
         default=config.MAX_FILE_SIZE_BYTES,
         ge=1,

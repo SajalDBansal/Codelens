@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import Field
 
 from ..storage import GraphStore
-from ..storage.schema import SCHEMA_VERSION
+from ..storage.sqlite_schema import SCHEMA_VERSION
 from .state import Record, StateError, home, locked, now, read_json, write_json
 
 
@@ -166,7 +166,7 @@ def add_project(root: Path, *, name=None, db=None) -> Project:
             if name:
                 project.name = name
         else:
-            database = Path(db).expanduser().resolve() if db else root / ".codelens" / "graph.lbug"
+            database = Path(db).expanduser().resolve() if db else root / ".codelens" / "graph.sqlite"
             meta = inspect_database(database)
             if meta and meta["root"] and not same_path(meta["root"], root):
                 raise StateError(f"The selected graph belongs to {meta['root']}, not {root}.")
@@ -213,7 +213,7 @@ def resolve_project(selector=None, *, db=None) -> Project:
             if (root / ".codelens" / "project.json").exists():
                 project = load_project(root)
                 break
-            if (root / ".codelens" / "graph.lbug").is_file():
+            if (root / ".codelens" / "graph.sqlite").is_file():
                 project = add_project(root)
                 break
         if project is None:

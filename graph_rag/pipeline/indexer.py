@@ -9,9 +9,9 @@ detail that this file calls into.
 
 THE SEVEN STEPS
 ---------------
-  1. Open the local LadybugDB file and validate its typed schema.
+  1. Open the local SQLite file and validate its typed schema.
   2. Build the Merkle hash tree of the repository on disk.
-  3. Load last run's hashes out of LadybugDB and compare.  <-- the cheap part
+  3. Load last run's hashes out of SQLite and compare.  <-- the cheap part
   4. Delete anything that disappeared from disk.
   5. Re-parse only the files that changed.
   6. Embed only the code BLOCKS whose own hash changed. <-- the expensive part
@@ -21,6 +21,7 @@ The point of steps 2-3 is to make step 6 as small as possible, because step
 6 is the one that costs money and time.
 """
 
+import hashlib
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -745,6 +746,14 @@ def run_indexing(repo_path: Path, force: bool = False, verbose: bool = True,
                 continue
 
             # ==== ROUTE A: a code file ===================================
+            if parsed.source_bytes is not None:
+                # Capture precisely what was parsed; edits during the scan
+                # must be retried rather than publishing the wrong file hash.
+                if hashlib.sha256(parsed.source_bytes).hexdigest() != disk_file_hashes[file_path]:
+                    report.failed_files[file_path] = "File changed during indexing; retry"
+                    continue
+                store.save_source(file_path, parsed.source_bytes)
+
             if language is not None:
                 # --- work out which BLOCKS actually changed ---------------
                 # The third level of the Merkle comparison. Even in a file we

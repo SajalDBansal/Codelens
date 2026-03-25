@@ -334,6 +334,7 @@ def _parse_markdown(source: bytes, relative_path: str, doc_type: str) -> ParsedD
     visit(tree.root_node, heading_trail=[], parent_id=None)
 
     return ParsedDocument(
+        source_bytes=source,
         file_path=relative_path,
         doc_type=doc_type,
         content_hash=_hash_text(source.decode("utf-8", errors="replace")),
@@ -389,6 +390,7 @@ def _parse_plain(source: bytes, relative_path: str, doc_type: str) -> ParsedDocu
             mentions.append((chunk_id, name))
 
     return ParsedDocument(
+        source_bytes=source,
         file_path=relative_path,
         doc_type=doc_type,
         content_hash=_hash_text(text),

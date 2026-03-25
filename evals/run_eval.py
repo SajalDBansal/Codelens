@@ -74,7 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--on-model-change", choices=["keep", "error"], default="error")
     parser.add_argument("--top-k", type=int)
     parser.add_argument("--hops", type=int, choices=[1, 2])
-    parser.add_argument("--db", help="Path to the local LadybugDB file")
+    parser.add_argument("--db", help="Path to the local SQLite index")
     return parser
 
 

@@ -85,7 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Useful for checking retrieval quality without paying for a completion."
         ),
     )
-    parser.add_argument("--db", help="Local LadybugDB file (default: .codelens/graph.lbug in the repository)")
+    parser.add_argument("--db", help="Local SQLite index file (default: .codelens/graph.sqlite in the repository)")
     return parser
 
 

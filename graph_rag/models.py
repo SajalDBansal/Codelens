@@ -21,14 +21,14 @@ class CodeEntity(BaseModel):
     """
     ONE piece of code we care about: a function, a method, or a class.
 
-    This is the thing we embed and the thing we store as a node in LadybugDB.
+    This is the thing we embed and the thing we store as a node in SQLite.
     """
 
     # A stable, unique, human-readable id.
     # Format: "<relative file path>::<Outer>.<inner>"
     # Example: "src/auth/user_service.py::UserService.login"
     # It is deterministic: parsing the same unchanged file always produces the
-    # same id, which is what lets us use MERGE (update-or-create) in LadybugDB
+    # same id, which is what lets us upsert in SQLite
     # instead of creating duplicate nodes on every run.
     id: str
 
@@ -44,8 +44,8 @@ class CodeEntity(BaseModel):
     file_path: str
 
     # "python" | "typescript" | "go" | ... - see parsing/languages.py.
-    # Stored on the node so you can write Cypher like
-    #   MATCH (e:CodeEntity {language: 'rust'})
+    # Stored on the node for language filtering in SQLite,
+    # e.g. WHERE language = :language,
     # without needing to join through the file.
     language: str
 
@@ -234,6 +234,7 @@ class ParsedFile(BaseModel):
     content_hash: str       # sha256 of the whole file's bytes
     entities: list[CodeEntity]
     relationships: list[Relationship]
+    source_bytes: bytes | None = None
 
     # Raw import lines, e.g. "from .db import GraphStore".
     # Kept as text because turning an import into a real file path is a
@@ -311,6 +312,7 @@ class ParsedDocument(BaseModel):
     doc_type: str
     content_hash: str
     chunks: list[DocChunk]
+    source_bytes: bytes | None = None
 
     # CONTAINS edges between nested sections. Resolvable immediately, because
     # both ends are in this same file.

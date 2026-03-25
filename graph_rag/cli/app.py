@@ -57,7 +57,7 @@ Project = Annotated[
     str | None, typer.Option(help="Project name, ID, ID prefix, or registered path.")
 ]
 Database = Annotated[
-    str | None, typer.Option("--db", help="Explicit graph file (legacy compatibility).")
+    str | None, typer.Option("--db", help="Explicit SQLite index file.")
 ]
 ModelPolicy = Annotated[
     ModelChange | None,

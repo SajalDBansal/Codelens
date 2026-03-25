@@ -45,7 +45,7 @@ class LanguageConfig:
     "is this node's type in this tuple?" and acts accordingly.
     """
 
-    # Our own name for the language, stored on every node in LadybugDB.
+    # Our own name for the language, stored on every node in SQLite.
     name: str
 
     # Node types that represent a callable thing (function/method/constructor).
@@ -649,7 +649,7 @@ SKIPPED_SUFFIXES: tuple[str, ...] = (
 #
 # THIS IS A SECURITY BOUNDARY, NOT A TIDINESS RULE.
 # Indexing a file means its contents are sent to the OpenAI embeddings API
-# and then stored in LadybugDB. A .env file swept up by accident would put your
+# and then stored in SQLite. A .env file swept up by accident would put your
 # live database password and API keys in a third party's logs, and would
 # then be retrievable by anyone who can ask this system a question.
 #

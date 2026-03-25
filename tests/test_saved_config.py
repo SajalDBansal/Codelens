@@ -23,18 +23,17 @@ repo = cli_fixtures.repo
 
 def test_import_ignores_environment_and_dotenv(tmp_path, monkeypatch):
     monkeypatch.setenv("EMBEDDING_DIM", "not-an-integer")
-    monkeypatch.setenv("LADYBUG_BUFFER_MB", "not-an-integer")
     monkeypatch.setenv("OPENAI_API_KEY", "must-not-be-used")
     (tmp_path / ".env").write_text("EMBEDDING_DIM=broken\nOPENAI_API_KEY=dotenv-must-not-be-used\n")
     code = (
         "import json,sys; from graph_rag import config; "
-        "print(json.dumps([config.EMBEDDING_DIM, config.LADYBUG_BUFFER_MB, "
+        "print(json.dumps([config.EMBEDDING_DIM, "
         "config.OPENAI_API_KEY, 'dotenv' in sys.modules]))"
     )
     result = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, check=True
     )
-    assert json.loads(result.stdout) == [1536, 256, "", False]
+    assert json.loads(result.stdout) == [1536, "", False]
 
 
 def test_keyring_is_required_even_when_an_environment_key_exists(monkeypatch):
@@ -48,12 +47,12 @@ def test_saved_models_and_tuning_override_ambient_values(repo, configured, model
     monkeypatch.setenv("EMBEDDING_DIM", "3072")
     monkeypatch.setenv("CHAT_MODEL", "unwanted-model")
     monkeypatch.setenv("MIN_SIMILARITY", "1")
-    monkeypatch.setenv("LADYBUG_DB_PATH", str(repo / "unwanted.lbug"))
+    monkeypatch.setenv("DB_PATH", str(repo / "unwanted.sqlite"))
     app.main(["embed", str(repo), "--quiet"])
     app.main(["ask", "checkout", "--project", "checkout"])
     assert ("query", "text-embedding-3-small", 8) in models
     assert ("answer", "gpt-4.1-nano") in models
-    assert not (repo / "unwanted.lbug").exists()
+    assert not (repo / "unwanted.sqlite").exists()
 
 
 def test_old_config_preserves_choices_but_never_uses_env_credentials(monkeypatch):
@@ -110,7 +109,7 @@ def test_environment_credential_flag_was_removed():
 @pytest.mark.parametrize(
     "option",
     [
-        "ladybug_buffer_mb=1",
+        "max_file_size_bytes=0",
         "default_top_k=0",
         "default_hops=3",
         "min_similarity=2",

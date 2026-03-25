@@ -33,7 +33,7 @@ AN HONEST NOTE ON WHAT THIS SAVES
 ---------------------------------
 To compute the hashes we still have to READ every code file from disk. Disk
 reads are fast and free. What the tree saves us is the expensive work:
-tree-sitter parsing, OpenAI embedding calls (which cost money), and LadybugDB
+tree-sitter parsing, OpenAI embedding calls (which cost money), and SQLite
 writes. Those are what get skipped for unchanged subtrees.
 """
 
@@ -214,7 +214,7 @@ def build_merkle_tree(root: Path) -> TreeNode:
 
 
 # ---------------------------------------------------------------------------
-# Flattening the tree (used when saving hashes back to LadybugDB)
+# Flattening the tree (used when saving hashes back to SQLite)
 # ---------------------------------------------------------------------------
 
 def collect_folder_hashes(node: TreeNode) -> dict[str, str]:
@@ -284,7 +284,7 @@ def diff_against_stored(
     """
     Compare the freshly built tree against the hashes saved last run.
 
-    `stored_folder_hashes` / `stored_file_hashes` come out of LadybugDB - see
+    `stored_folder_hashes` / `stored_file_hashes` come out of SQLite - see
     storage/graph_store.py.
 
     This is where the "skip whole folders" optimisation actually happens.

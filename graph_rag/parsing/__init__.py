@@ -21,7 +21,7 @@ inheritance), using tree-sitter.
                   heading SECTIONS rather than functions, because that is
                   the piece of prose worth embedding on its own.
 
-This folder does NOT know that LadybugDB or OpenAI exist. Give it a file path,
+This folder does NOT know that SQLite or OpenAI exist. Give it a file path,
 get back data. That makes it easy to test on its own.
 """
 

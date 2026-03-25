@@ -1,7 +1,7 @@
 """Exercise indexing and retrieval without network or provider credentials.
 
 Uses deterministic test embeddings, not semantic model output. The real parser,
-Ladybug storage, graph traversal, keyword search, and context builder all run.
+SQLite and vector-file storage, graph traversal, keyword search, and context builder all run.
 Pass --db to retain a local test database; otherwise a temporary one is used.
 """
 import argparse
@@ -45,7 +45,7 @@ def main():
     with ExitStack() as stack:
         target = args.db
         if target is None:
-            target = Path(stack.enter_context(tempfile.TemporaryDirectory())) / 'graph.lbug'
+            target = Path(stack.enter_context(tempfile.TemporaryDirectory())) / 'graph.sqlite'
         stack.enter_context(patch.object(config, 'EMBEDDING_MODEL', 'deterministic-smoke-only'))
         stack.enter_context(patch.object(config, 'EMBEDDING_DIM', 3))
         stack.enter_context(patch.object(config, 'GENERATE_SUMMARIES', True))

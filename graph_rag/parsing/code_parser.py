@@ -1829,6 +1829,7 @@ def parse_file(absolute_path: Path, relative_path: str) -> Optional[ParsedFile]:
             interface_refs.append((entity.id, kind, value))
 
     parsed = ParsedFile(
+        source_bytes=source,
         file_path=relative_path,
         language=language,
         content_hash=_hash_text(source.decode("utf-8", errors="replace")),

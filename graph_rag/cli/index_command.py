@@ -4,7 +4,7 @@ cli/index_command.py
 
 ENTRY POINT 1 of 2:  `graph-rag-index`
 
-Reads a codebase, stores its structure as a graph in LadybugDB, and creates the
+Reads a codebase, stores its structure as a graph in SQLite, and creates the
 embeddings. Run it once to build the graph, then again any time the code
 changes - the second run only touches what actually changed.
 
@@ -40,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="graph-rag-index",
         description=(
-            "Index a codebase into a LadybugDB graph with embeddings.\n"
+            "Index a codebase into a SQLite graph with embeddings.\n"
             "Code languages: " + ", ".join(supported_languages()) + "\n"
             "Document types: " + ", ".join(supported_doc_types())
         ),
@@ -66,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Only print the final summary",
     )
-    parser.add_argument("--db", help="Local LadybugDB file (default: .codelens/graph.lbug in the repository)")
+    parser.add_argument("--db", help="Local SQLite index file (default: .codelens/graph.sqlite in the repository)")
     return parser
 
 
@@ -81,7 +81,7 @@ def main(argv=None, *, _managed=False):
     args = build_parser().parse_args(argv)
 
     # Fail immediately if the managed settings are incomplete,
-    # instead of failing later inside the OpenAI or LadybugDB library.
+    # instead of failing later inside the OpenAI or SQLite library.
     config.validate()
 
     repo_path = Path(args.path)
@@ -173,7 +173,7 @@ def main(argv=None, *, _managed=False):
         raise SystemExit(1)
 
     database_path = Path(
-        args.db or repo_path.resolve() / ".codelens" / "graph.lbug"
+        args.db or repo_path.resolve() / ".codelens" / "graph.sqlite"
     ).expanduser().resolve()
     print(f"  database             {database_path}")
     return report

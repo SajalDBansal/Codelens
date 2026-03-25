@@ -6,13 +6,6 @@ reads a configuration file or an application environment variable.
 """
 
 # ---------------------------------------------------------------------------
-# Local LadybugDB settings
-# ---------------------------------------------------------------------------
-LADYBUG_BUFFER_MB = 256
-LADYBUG_THREADS = 2
-
-
-# ---------------------------------------------------------------------------
 # OpenAI ("ChatGPT") settings
 # ---------------------------------------------------------------------------
 
@@ -28,7 +21,7 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 # How many numbers are in one embedding vector. This MUST match the model:
 #   text-embedding-3-small -> 1536
 #   text-embedding-3-large -> 3072
-# Ladybug stores fixed-width arrays. A model/dimension change requires a
+# Vector files store fixed-width arrays. A model/dimension change requires a
 # new database path and a complete re-index.
 EMBEDDING_DIM = 1536
 
@@ -412,7 +405,7 @@ RELATIVE_SIMILARITY_MARGIN = 0.08
 # usefulness. A seed's twenty siblings all sit at hop 1 next to the one
 # function that actually answers the question, and whichever the database
 # returned first won. Scoring them against the question costs nothing extra:
-# the embeddings are already in LadybugDB and the question vector is already
+# the embeddings are already in SQLite and the question vector is already
 # computed.
 NEIGHBOUR_RELEVANCE_WEIGHT = 1.0
 
@@ -442,8 +435,8 @@ def validate() -> None:
     immediately with a readable message, instead of failing later with a
     confusing error from deep inside a library.
     """
-    if LADYBUG_BUFFER_MB < 32 or LADYBUG_THREADS < 1 or EMBEDDING_DIM < 1:
-        raise SystemExit("Use LADYBUG_BUFFER_MB >= 32, LADYBUG_THREADS >= 1, EMBEDDING_DIM >= 1")
+    if EMBEDDING_DIM < 1:
+        raise SystemExit("Use EMBEDDING_DIM >= 1")
     missing = []
     if not OPENAI_API_KEY:
         missing.append("OPENAI_API_KEY")

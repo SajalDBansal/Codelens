@@ -7,7 +7,7 @@ Guards the rule that decides WHICH FILES GET INDEXED.
 Why this file exists, and why it is the first test in the project:
 
 Indexing a file means its contents are sent to the OpenAI API and stored in
-LadybugDB, where anyone who can query this system can retrieve them. So a bug in
+the local index, where anyone who can query this system can retrieve them. So a bug in
 the exclusion rules is not an inconvenience - it leaks credentials to a third
 party. The rules are also easy to break by accident, because they live in
 several places (an ignore list, a filename check, a size cap) and each new
@@ -25,7 +25,6 @@ import pytest
 
 from graph_rag.change_detection import build_merkle_tree, collect_file_hashes
 from graph_rag.parsing.languages import is_indexable, looks_like_secret
-
 
 # ---------------------------------------------------------------------------
 # The fake repository

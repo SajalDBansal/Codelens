@@ -26,8 +26,6 @@ from graph_rag.storage import GraphStore
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "OPENAI_API_KEY", "test-placeholder-not-a-real-key")
-    monkeypatch.setattr(config, "LADYBUG_BUFFER_MB", 64)
-    monkeypatch.setattr(config, "LADYBUG_THREADS", 1)
     monkeypatch.setattr(config, "GENERATE_SUMMARIES", False)
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
     monkeypatch.chdir(tmp_path)
@@ -48,7 +46,7 @@ def isolated(monkeypatch, tmp_path):
 def configured():
     value = settings.Settings(
         embedding_dimensions=8,
-        engine={"generate_summaries": False, "ladybug_buffer_mb": 64, "ladybug_threads": 1},
+        engine={"generate_summaries": False},
     )
     settings.store_key("test-placeholder-not-a-real-key")
     settings.save_settings(value)
@@ -367,8 +365,8 @@ def test_no_update_cannot_rebuild(repo, configured, models):
         )
 
 
-def test_adopts_old_graph_and_legacy_commands(repo, configured, models):
-    database = repo / ".codelens" / "old.lbug"
+def test_registers_existing_sqlite_index_from_explicit_path(repo, configured, models):
+    database = repo / ".codelens" / "custom.sqlite"
     with settings.engine_settings(configured):
         indexer.run_indexing(repo, db_path=database, verbose=False)
     assert not (repo / ".codelens" / "project.json").exists()
@@ -379,7 +377,7 @@ def test_adopts_old_graph_and_legacy_commands(repo, configured, models):
 
 
 def test_readonly_inspection_does_not_create_database(tmp_path):
-    missing = tmp_path / "missing" / "graph.lbug"
+    missing = tmp_path / "missing" / "graph.sqlite"
     with pytest.raises(FileNotFoundError):
         GraphStore(missing, read_only=True)
     assert not missing.parent.exists()
@@ -448,11 +446,11 @@ def test_help_in_fresh_python_process_has_no_side_effects(tmp_path):
     assert not state.home().exists()
 
 
-def test_legacy_command_names_use_saved_settings(repo, configured, models, monkeypatch):
+def test_alternate_command_names_use_saved_settings(repo, configured, models, monkeypatch):
     monkeypatch.setattr(config, "EMBEDDING_MODEL", "text-embedding-3-small")
     monkeypatch.setattr(config, "EMBEDDING_DIM", 8)
     index_command.main([str(repo), "--quiet"])
-    ask_command.main(["checkout", "--db", str(repo / ".codelens" / "graph.lbug"), "--no-answer"])
+    ask_command.main(["checkout", "--db", str(repo / ".codelens" / "graph.sqlite"), "--no-answer"])
     assert settings.load_settings().schema_version == 2
     assert ("query", "text-embedding-3-small", 8) in models
 

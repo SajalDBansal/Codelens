@@ -9,7 +9,7 @@ THE TWO ENTRY POINTS
 ------------------------------------------------------------------------
 
   graph-rag-index   Reads a codebase -> parses it -> stores the structure as
-                    a graph in LadybugDB -> creates embeddings.
+                    a graph in SQLite -> creates embeddings.
                     (the "build the knowledge" command)
 
   graph-rag-ask     Takes a question -> finds relevant code in the graph ->
@@ -28,7 +28,7 @@ THE FOLDERS, IN THE ORDER DATA FLOWS THROUGH THEM
                       functions and classes for code, heading SECTIONS for
                       documentation (.md, .yaml, .json, ...).
   embedding/          "What does this mean?"           text -> vector (OpenAI).
-  storage/            "Where does it all live?"        every LadybugDB query.
+  storage/            "Where does it all live?"        every SQLite query.
   pipeline/           "Run the whole indexing job."    orchestrates the above.
 
   retrieval/          "Find the code that answers this question."

@@ -75,14 +75,10 @@ def test_new_exclusion_purges_old_graph_content(
         assert set(paths).issubset(store.get_file_hashes())
         assert store.get_summary_hashes()
         # This interface is supported only by the soon-to-be-excluded files.
-        store.query(
-            "CREATE (i:Interface {id: 'artifact-only', kind: 'route', value: '/artifact-only'})"
-        )
-        store.query(
-            "MATCH (e:CodeEntity), (i:Interface {id: 'artifact-only'}) "
-            "WHERE e.filePath IN $paths MERGE (e)-[:REFERENCES]->(i)",
-            paths=list(paths),
-        )
+        store.save_interface_refs([
+            (row["id"], "route", "/artifact-only")
+            for row in store._nodes("CodeEntity") if row["file_path"] in paths
+        ])
 
     app.main(["config", "update", "extra_ignored_directories", json.dumps(["artifacts"])])
     app.main(["config", "update", "generate_summaries", str(summaries_enabled).lower()])
@@ -92,10 +88,10 @@ def test_new_exclusion_purges_old_graph_content(
         assert set(store.get_file_hashes()) == {"checkout.py", "README.md", ".gitignore"}
         assert set(store.get_folder_hashes()) == {""}
         for label in ["CodeEntity", "Doc"]:
-            rows = store.query(f"MATCH (n:{label}) RETURN n.filePath AS path")
+            rows = store.query("SELECT file_path AS path FROM nodes WHERE label=:label", label=label)
             assert all("artifacts" not in row["path"].split("/") for row in rows)
-        summaries = store.query("MATCH (s:Summary) RETURN s.path AS path, s.text AS text")
-        assert all("artifacts" not in row["path"] + row["text"] for row in summaries)
-        assert not store.query("MATCH (i:Interface {id: 'artifact-only'}) RETURN i.id AS id")
+        summaries = [store._object(row) for row in store._nodes("Summary")]
+        assert all("artifacts" not in row.path + row.text for row in summaries)
+        assert not store.query("SELECT id FROM nodes WHERE label='Interface' AND json_extract(data,'$.value')='/artifact-only'")
     # Exclusion removes indexed data, never the repository's actual files.
     assert all((repo / path).exists() for path in paths)

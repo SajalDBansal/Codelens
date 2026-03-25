@@ -14,7 +14,7 @@
 #
 # Keep the versions here in sync with the `dependencies` list in pyproject.toml.
 
-ladybug==0.21.2
+numpy>=2.3,<3
 tree-sitter>=0.26.0,<0.27
 tree-sitter-language-pack>=1.22.1,<2
 openai>=3.35.1,<4

@@ -1,4 +1,4 @@
-"""Local Ladybug recovery tests; deterministic model doubles, no services."""
+"""Local SQLite recovery tests; deterministic model doubles, no services."""
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -38,7 +38,7 @@ class FakeSummarizer:
 @pytest.fixture
 def database(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "EMBEDDING_DIM", 8)
-    with GraphStore(tmp_path / ".codelens" / "graph.lbug") as store:
+    with GraphStore(tmp_path / ".codelens" / "graph.sqlite") as store:
         store.verify_connection()
         store.ensure_schema()
 
@@ -120,9 +120,8 @@ def test_failed_parse_is_visible_and_retried(database, repo, monkeypatch, force)
 
 
 def summary_text(database):
-    with database._session() as session:
-        row = session.run("MATCH (s:Summary {path: 'src'}) RETURN s.text AS text").single()
-        return row["text"] if row else ""
+    rows = database.query("SELECT * FROM nodes WHERE label='Summary' AND path='src'")
+    return database._object(rows[0]).text if rows else ""
 
 
 def test_incremental_summary_includes_unchanged_files(database, repo):

@@ -31,7 +31,7 @@ keywords = [
     "code-search",
     "codebase",
     "retrieval-augmented-generation",
-    "ladybugdb",
+    "sqlite",
     "openai",
     "cli",
 ]
@@ -48,8 +48,8 @@ classifiers = [
 ]
 
 dependencies = [
-    # Embedded graph storage: no server or Docker. Pinned disk format/runtime.
-    "ladybug==0.21.2",
+    # SQLite ships with Python; vectors use portable float32 NumPy files.
+    "numpy>=2.3,<3",
 
     # Parses source code into syntax trees.
     "tree-sitter>=0.26.0,<0.27",
