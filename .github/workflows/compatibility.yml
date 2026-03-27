@@ -1,0 +1,39 @@
+name: Python compatibility
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 8 1 * *"
+
+permissions:
+  contents: read
+
+jobs:
+  pipeline:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -VV
+      # Windows hosted runners include MSVC; Linux runners include GCC.
+      # Python 3.15 currently builds py-tree-sitter from its source release.
+      - run: python -m pip install ".[dev]"
+      - run: python -m pip check
+      - run: python -m pytest -q tests --junitxml=results.xml
+      - name: Smoke test the installed package outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: python "${{ github.workspace }}/scripts/smoke_local.py"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: results-${{ matrix.os }}-${{ matrix.python }}
+          path: results.xml

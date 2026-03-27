@@ -3,7 +3,7 @@
 # This file tells Python how to install the project.
 #
 # The distribution is named `codelens-rag`; the Python import remains `graph_rag`.
-# [project.scripts] installs the `codelens` command and the legacy aliases.
+# [project.scripts] installs the `codelens` command and its alternate entry points.
 #
 # Install it with:      pip install -e .
 # The "-e" means "editable": Python points at these source files directly, so
@@ -19,9 +19,8 @@ name = "codelens-rag"
 version = "0.1.0"
 description = "Local Graph RAG for codebases: index code, retrieve evidence, and ask questions with OpenAI"
 readme = {file = "README.md", content-type = "text/markdown"}
-# The Windows Ladybug wheel fails to load with the tested standard Python 3.14.
-# See docs/compatibility.md before extending this range.
-requires-python = ">=3.11,<3.14"
+# Native parser wheel availability is documented in docs/08-compatibility.md.
+requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{name = "SajalDBansal"}]
@@ -44,6 +43,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Text Processing :: Indexing",
 ]
 
