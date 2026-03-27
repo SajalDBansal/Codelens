@@ -10,9 +10,19 @@ dist-*/
 .ruff_cache/
 .venv/
 .venv-*/
+.cache/
+.runtimes/
 test-results/
+
+# Generated benchmark results
+/docs/benchmarks/
+/benchmark-results/
 
 # Local graph and runtime files
 .codelens/
-*.lbug
-*.lbug.*
+*.sqlite
+*.sqlite-*
+*.sqlite.vectors/
+
+.runtimes
+benchmarks

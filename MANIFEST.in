@@ -1,7 +1,7 @@
 # Human-readable guide and support files needed by the documented source workflows.
 include README.md LICENSE CHANGELOG.md requirements.txt
 recursive-include docs *.md
-include scripts/smoke_local.py scripts/test_recovery.py
+include scripts/smoke_local.py scripts/test_recovery.py scripts/benchmark_storage.py
 recursive-include evals *.py *.json
 recursive-include examples *.py *.md
 recursive-include tests *.py
@@ -13,10 +13,13 @@ prune .venv
 prune .venv-*
 prune test-results
 prune .codelens
+prune .cache
+prune .runtimes
 prune .pytest_cache
 prune .ruff_cache
 prune build
 prune dist
 prune dist-*
 prune planning
-global-exclude *.pyc *.pyo *.lbug *.lbug.*
+prune docs/benchmarks
+global-exclude *.pyc *.pyo *.sqlite *.sqlite-* *.npy
