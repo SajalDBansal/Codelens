@@ -1,6 +1,7 @@
-# 05 - CLI commands and project selection
+# 06 - CLI commands and project selection
 
-The public interface is the `codelens` command family. This chapter keeps its old filename so existing links work; the application now has more than two commands.
+The public interface is the `codelens` command family. These commands cover setup,
+project management, indexing, retrieval, answers, and local index maintenance.
 
 ## Command map
 
@@ -16,6 +17,7 @@ The public interface is the `codelens` command family. This chapter keeps its ol
 | `ask QUESTION` | Update, retrieve, then generate an answer. | Same as retrieve, plus answer generation when evidence is available. |
 | `status` | Inspect project metadata, model profile, and counts. | Local graph access; no source freshness scan. |
 | `doctor` | Check saved settings, credential availability, and registered paths. | Local only. |
+| `compact` | Reclaim obsolete vector segments and snapshots in the selected project. | Local only; holds exclusive project/index locks. |
 
 Run `codelens --help` or `codelens COMMAND --help` for exact syntax. `python -m graph_rag` is the same CLI when used with the installed interpreter.
 
@@ -79,8 +81,11 @@ codelens --config-dir "/path/to/separate-config" init
 
 The interactive update starts with the saved value in the input. Enter validates/saves; Ctrl+C cancels. Secrets use hidden replacement input. A custom configuration directory has its own registry and keyring account.
 
-`graph-rag-index` and `graph-rag-ask` are compatibility aliases for embed and ask. `--db` supports adoption of older graph files, but must agree with an existing project's active path; prefer `--project` for everyday use. All entry points use saved configuration and model checks.
+`graph-rag-index` and `graph-rag-ask` are compatibility aliases for embed and ask.
+`--db` selects an explicit SQLite index and must agree with an existing project's
+active path; prefer `--project` for everyday use.
+All entry points use saved configuration and model checks.
 
 **Source:** [app.py](../graph_rag/cli/app.py), [projects.py](../graph_rag/cli/projects.py), [workflow.py](../graph_rag/cli/workflow.py).
 
-[Previous](04-setup-and-first-run.md) | [Guide](README.md) | [Next: Configuration](06-configuration-reference.md)
+[Previous: Setup and first run](05-setup-and-first-run.md) | [Guide](README.md) | [Next: Configuration reference](07-configuration-reference.md)

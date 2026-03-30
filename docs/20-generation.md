@@ -1,4 +1,4 @@
-# 17 - Folder summaries and answer generation
+# 20 - Folder summaries and answer generation
 
 CodeLens generates two kinds of prose: short folder summaries while indexing, and an answer after retrieval. Both use the saved answer/reasoning model. Embeddings use their separately configured model.
 
@@ -55,4 +55,4 @@ Use an account-accessible model compatible with the package's text Chat Completi
 
 **Source:** [summarizer.py](../graph_rag/pipeline/summarizer.py), [answerer.py](../graph_rag/generation/answerer.py), [model_options.py](../graph_rag/generation/model_options.py).
 
-[Previous](16-retrieval.md) | [Guide](README.md) | [Next: Testing](18-testing.md)
+[Previous: Retrieval](19-retrieval.md) | [Guide](README.md) | [Next: Testing](21-testing.md)

@@ -52,4 +52,4 @@ CodeLens does not train or fine-tune a model on your repository. It saves an ind
 
 **Source:** [retriever.py](../graph_rag/retrieval/retriever.py), [answerer.py](../graph_rag/generation/answerer.py).
 
-[Guide](README.md) | [Next: Graph RAG](02-why-graph-rag-for-code.md)
+[Guide](README.md) | [Next: Why Graph RAG for code?](02-why-graph-rag-for-code.md)

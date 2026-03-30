@@ -1,4 +1,4 @@
-# 12 - How relationships are resolved
+# 15 - How relationships are resolved
 
 Finding a call named `save()` is easier than deciding which `save()` it means. The parser collects facts from one file; the indexer then compares them with the other indexed definitions. This chapter explains how links are selected and why uncertainty remains.
 
@@ -65,4 +65,4 @@ A disconnected graph is not automatically an error: independent utilities, dynam
 
 **Source:** [indexer.py](../graph_rag/pipeline/indexer.py), [import_resolver.py](../graph_rag/pipeline/import_resolver.py), [interfaces.py](../graph_rag/parsing/interfaces.py), [test_evidence_resolution.py](../tests/test_evidence_resolution.py), [test_type_edges.py](../tests/test_type_edges.py).
 
-[Previous](11-data-model-and-schema.md) | [Guide](README.md) | [Next: Embeddings](13-embeddings.md)
+[Previous: Local storage and maintenance](14-local-storage-and-maintenance.md) | [Guide](README.md) | [Next: Embeddings](16-embeddings.md)

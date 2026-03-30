@@ -51,4 +51,4 @@ Semantic search finds approximate meaning. Keyword search finds identifiers and 
 
 **Source:** [schema.py](../graph_rag/storage/schema.py), [indexer.py](../graph_rag/pipeline/indexer.py), [retriever.py](../graph_rag/retrieval/retriever.py).
 
-[Previous](01-what-is-rag.md) | [Guide](README.md) | [Next: Product](03-what-this-product-does.md)
+[Previous: What is RAG?](01-what-is-rag.md) | [Guide](README.md) | [Next: What the product does](03-what-this-product-does.md)

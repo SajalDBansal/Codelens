@@ -1,6 +1,7 @@
-# 20 - Current limitations
+# 24 - Current limitations
 
-These are the boundaries of the published CodeLens 0.1.0 package. Use them when interpreting a graph or answer and deciding whether the tool fits your project.
+These are the boundaries of CodeLens. Use them when interpreting a graph or
+answer and deciding whether the tool fits your project.
 
 ## Current limits
 
@@ -13,7 +14,7 @@ These are the boundaries of the published CodeLens 0.1.0 package. Use them when 
 | Parsing | Static syntax and resolution heuristics; incomplete runtime/dynamic behavior. |
 | Documents | Chunk caps can omit later content; identical repeated heading trails can collide in chunk identity. |
 | Shared interfaces | Literal-derived discovery links, not verified service calls. |
-| Retrieval | Exact vector scans and per-connection Python keyword cache; large-corpus performance is not guaranteed. |
+| Retrieval | Exact vector scans and persistent SQLite keyword postings; large-corpus performance is not guaranteed. |
 | Hashing | Eligible files are read to build the tree on each freshness scan. |
 | Recovery | Repairable writes and completion markers; no atomic full-index transaction or per-API-batch durable checkpoint. |
 | Summaries | Generated from outlines and can be missing/stale/inaccurate. |
@@ -21,7 +22,7 @@ These are the boundaries of the published CodeLens 0.1.0 package. Use them when 
 | Progress | Human-readable stages/counters, not a complete structured event stream. |
 | Chat | Independent questions; no saved conversation history or token streaming. |
 | Data handling | Local graphs contain source; eligible content is sent to OpenAI for model work. Filename exclusions are not content-level secret detection. |
-| Platforms | Windows x64/Python 3.11–3.13; other targets are not verified. |
+| Platforms | Windows x64/Python 3.11–3.15 and Linux x64/Python 3.15 verified; 3.15 requires a compiler for installation. macOS, ARM64 and free-threaded builds are not verified. See [compatibility](08-compatibility.md). |
 
 The package runs against local source files. It does not provide a website, remote repository download, multi-user authorization, or a service API.
 
@@ -35,10 +36,10 @@ Passing tests with fake vectors demonstrates storage and retrieval mechanics,
 not semantic answer quality. Repository size, language features, model access,
 and eligible source content affect coverage, latency, and cost.
 
-See [Troubleshooting](19-troubleshooting.md) for diagnosing problems and
-[Testing](18-testing.md) for evaluating a repository-specific result.
+See [Troubleshooting](23-troubleshooting.md) for diagnosing problems and
+[Testing](21-testing.md) for evaluating a repository-specific result.
 
-**Source:** [storage search](../graph_rag/storage/graph_store.py),
+**Source:** [storage search](../graph_rag/storage/sqlite_store.py),
 [retrieval](../graph_rag/retrieval/retriever.py), [answer generation](../graph_rag/generation/answerer.py).
 
-[Previous](19-troubleshooting.md) | [Guide](README.md) | [Next: Glossary](21-glossary.md)
+[Previous: Troubleshooting](23-troubleshooting.md) | [Guide](README.md) | [Next: Glossary](25-glossary.md)

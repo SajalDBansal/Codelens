@@ -1,4 +1,4 @@
-# 10 - How documents become chunks
+# 12 - How documents become chunks
 
 Code alone does not explain every intention, setup step, or configuration choice. CodeLens indexes eligible prose and configuration text as `Doc` nodes, separately from code entities.
 
@@ -57,4 +57,4 @@ At retrieval time, a document seed can bring in code it mentions. Code hits can 
 
 **Source:** [doc_parser.py](../graph_rag/parsing/doc_parser.py), [resolve_mention in indexer.py](../graph_rag/pipeline/indexer.py), [models.py](../graph_rag/models.py).
 
-[Previous](09-parsing-code.md) | [Guide](README.md) | [Next: Storage](11-data-model-and-schema.md)
+[Previous: Parsing code](11-parsing-code.md) | [Guide](README.md) | [Next: Data model and storage](13-data-model-and-schema.md)

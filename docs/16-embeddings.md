@@ -1,4 +1,4 @@
-# 13 - Embedding inputs, batches, and reuse
+# 16 - Embedding inputs, batches, and reuse
 
 An embedding is a numeric vector for a text input. CodeLens stores vectors alongside code, documents, and folder summaries, then embeds a question with the same profile so their similarities can be compared.
 
@@ -68,6 +68,6 @@ print(build_embedding_text(entity))
 
 This shows the built-in-default input construction without creating an OpenAI client. It is useful when debugging what meaning a vector is supposed to represent.
 
-**Source:** [embedder.py](../graph_rag/embedding/embedder.py), [graph_store.py](../graph_rag/storage/graph_store.py), [workflow.py](../graph_rag/cli/workflow.py).
+**Source:** [embedder.py](../graph_rag/embedding/embedder.py), [sqlite_store.py](../graph_rag/storage/sqlite_store.py), [vector_files.py](../graph_rag/storage/vector_files.py), [workflow.py](../graph_rag/cli/workflow.py).
 
-[Previous](12-relationships.md) | [Guide](README.md) | [Next: Change detection](14-change-detection.md)
+[Previous: Relationships](15-relationships.md) | [Guide](README.md) | [Next: Change detection](17-change-detection.md)

@@ -1,4 +1,4 @@
-# 16 - From a question to useful evidence
+# 19 - From a question to useful evidence
 
 Retrieval decides which pieces the answer model will see. A better model cannot reliably explain a missing function, so this stage is worth inspecting independently with `codelens retrieve`.
 
@@ -75,6 +75,6 @@ codelens ask "How is tax applied?" --project smoke_repo --show-context
 
 The `*` marker denotes a direct hit (`hop == 0`), not necessarily a vector-only hit. Reasons explain connected results. A retrieval failure can mean no indexed content, a missed candidate, overly strict filtering, or a context budget that kept no useful evidence. The CLI stops before answer generation when nothing was retained, but the query embedding has already occurred.
 
-**Source:** [retriever.py](../graph_rag/retrieval/retriever.py), [graph_store.py](../graph_rag/storage/graph_store.py), [ask_command.py](../graph_rag/cli/ask_command.py), [test_retrieval_rules.py](../tests/test_retrieval_rules.py).
+**Source:** [retriever.py](../graph_rag/retrieval/retriever.py), [sqlite_store.py](../graph_rag/storage/sqlite_store.py), [search.py](../graph_rag/storage/search.py), [ask_command.py](../graph_rag/cli/ask_command.py), [test_retrieval_rules.py](../tests/test_retrieval_rules.py).
 
-[Previous](15-the-indexing-pipeline.md) | [Guide](README.md) | [Next: Generation](17-generation.md)
+[Previous: Indexing pipeline](18-the-indexing-pipeline.md) | [Guide](README.md) | [Next: Generation](20-generation.md)

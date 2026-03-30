@@ -1,8 +1,8 @@
-# 18 - How to test and evaluate the package
+# 21 - How to test and evaluate the package
 
 There are different questions to test: does the code behave correctly, does local storage survive an update, does retrieval find expected evidence, and does a model produce a good answer? One passing smoke test cannot establish all four.
 
-The [compatibility reference](compatibility.md) lists supported Python versions, tested dependencies, and local checks. Use its constrained install command when reproducing the tested Windows baseline.
+The [compatibility reference](08-compatibility.md) lists supported Python versions, tested dependencies, and local checks. Use its constrained install command when reproducing the tested Windows baseline.
 
 ## Automated tests without OpenAI requests
 
@@ -19,19 +19,25 @@ In unactivated PowerShell use `.\.venv\Scripts\python.exe` instead of `python`. 
 | --- | --- |
 | Parsing and languages | Entities, nesting, ownership, line ranges, call/type extraction. |
 | Resolution | Duplicate names, scope/import/type/arity evidence, interfaces. |
-| Storage | Ladybug tables, vector dimensions, persisted writes, searches. |
+| Storage | SQLite tables and vector files, vector dimensions, persisted writes, searches. |
 | Incremental updates | Changed/deleted definitions, stale vectors, failed parsing, forced deletions. |
 | Retrieval | Ranking/fusion, relevance floors, module expansion, context limits. |
 | CLI/configuration | Setup, editable inputs, key hiding, model changes, project selection, `.gitignore`. |
 | OpenAI SDK compatibility | Real SDK request serialization and response/error handling through an in-memory HTTP transport. No live API calls. |
 | Recovery | Interrupted indexing and replacement-graph publication. |
+| Source storage | Unicode/CRLF ranges, edited/deleted file snapshots, synthetic text, vector corruption and interrupted publication. |
+| Maintenance | Compaction preserves vectors, source context, project metadata, and retrieval results without model calls. |
 
 Run focused files while changing a component:
 
 ```sh
-python -m pytest tests/test_ladybug_store.py tests/test_retrieval_rules.py -q
+python -m pytest tests/test_sqlite_store.py tests/test_retrieval_rules.py -q
 python scripts/test_recovery.py
 ```
+
+`test_sqlite_store.py` checks the SQLite storage contract. For repeatable local
+performance measurements, see [storage benchmark](22-storage-benchmark.md) and
+`scripts/benchmark_storage.py`.
 
 Test counts change as the project evolves. Use the output of your current run rather than a historical count as proof of coverage.
 
@@ -46,7 +52,7 @@ The script parses the bundled checkout demo, supplies deterministic vectors and 
 To retain its graph for inspection:
 
 ```sh
-python scripts/smoke_local.py --db "/path/to/temporary-test/graph.lbug"
+python scripts/smoke_local.py --db "/path/to/temporary-test/graph.sqlite"
 ```
 
 Use a new disposable path, not a real project's active database. The smoke profile deliberately uses three-dimensional fake vectors and is not interchangeable with a normal configured graph. The script calls the engine directly and does not create a normal user project manifest.
@@ -85,4 +91,4 @@ A wheel installation should provide `codelens --help` and `python -m graph_rag -
 
 **Source:** [tests](../tests), [smoke_local.py](../scripts/smoke_local.py), [run_eval.py](../evals/run_eval.py), [questions.smoke.json](../evals/questions.smoke.json).
 
-[Previous](17-generation.md) | [Guide](README.md) | [Next: Troubleshooting](19-troubleshooting.md)
+[Previous: Generation](20-generation.md) | [Guide](README.md) | [Next: Performance measurement](22-storage-benchmark.md)

@@ -1,4 +1,4 @@
-# 21 - Glossary
+# 25 - Glossary
 
 | Term | Plain-language meaning in CodeLens |
 | --- | --- |
@@ -44,8 +44,8 @@
 | Prompt | Instructions and input messages sent to a generation model. |
 | Grounding | Asking a model to base claims on supplied evidence. It is an objective, not a guarantee. |
 | Citation | A file/line reference in an answer that the reader can check. |
-| LadybugDB | The embedded graph database used for each local project. |
-| Cypher | The graph query language used by the storage implementation. |
+| SQLite | Python's bundled database used for graph metadata, keyword postings, and compressed source snapshots. |
+| NumPy segment | An immutable binary file of float32 embeddings. |
 | Primary key | A unique identifier used to address a stored node. |
 | Manifest | `.codelens/project.json`, describing a project's root, active graph, profiles, and status. |
 | Registry | The user-level list of registered projects and selected default. |
@@ -59,6 +59,6 @@
 | Recall@all in this evaluator | Fraction of cases whose expected entity survives retrieval and context assembly. |
 | Streaming | Delivering pieces/events before completion; not the same as printing stage messages. |
 
-Read the [walkthrough](22-end-to-end-walkthrough.md) to see these terms applied to the same small example instead of learning them in isolation.
+Read the [walkthrough](26-end-to-end-walkthrough.md) to see these terms applied to the same small example instead of learning them in isolation.
 
-[Previous](20-limitations.md) | [Guide](README.md) | [Next: Walkthrough](22-end-to-end-walkthrough.md)
+[Previous: Current limitations](24-limitations.md) | [Guide](README.md) | [Next: End-to-end walkthrough](26-end-to-end-walkthrough.md)

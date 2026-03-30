@@ -1,4 +1,4 @@
-# 06 - Configuration reference
+# 07 - Configuration reference
 
 User preferences live in `~/.codelens/config.json`. The API key lives in the OS credential store. `graph_rag/config.py` supplies engine defaults, and the CLI applies the saved settings around one operation. You normally configure the installed application through `codelens config`, not by editing Python code.
 
@@ -34,8 +34,6 @@ The table below is generated from the current `Settings` and `EngineOptions` def
 | `embedding_dimensions` | `1536` | Vector dimensions; changes require keep/rebuild. |
 | `reasoning_model` | `gpt-4.1-nano` | Chat Completions model for answers and new folder summaries. |
 | `api_key` | `not configured; stored in OS keyring` | Stored in the OS keyring; replace through hidden input, never displayed. |
-| `ladybug_buffer_mb` | `256` | Database buffer budget in MB; minimum 32. |
-| `ladybug_threads` | `2` | Worker threads used by the embedded database. |
 | `max_file_size_bytes` | `1000000` | Largest source file to index, in bytes. |
 | `max_doc_file_size_bytes` | `100000` | Largest documentation/config file to index, in bytes. |
 | `max_doc_chunks_per_file` | `12` | Maximum chunks per structured document. |
@@ -122,7 +120,7 @@ The table below is generated from the current `Settings` and `EngineOptions` def
 
 ## Important interpretations
 
-`min_similarity` uses the storage score `(1 + cosine_similarity) / 2`, clamped to 0..1. The default 0.62 corresponds to raw cosine 0.24. It is not a probability. Keyword-only hits without a returned vector score are handled differently; see [retrieval](16-retrieval.md).
+`min_similarity` uses the storage score `(1 + cosine_similarity) / 2`, clamped to 0..1. The default 0.62 corresponds to raw cosine 0.24. It is not a probability. Keyword-only hits without a returned vector score are handled differently; see [retrieval](19-retrieval.md).
 
 `max_context_chars`, `max_block_chars`, `max_embed_chars`, and document chunk limits are character-based safeguards, not exact tokenizer limits. Headers and truncation markers add text. The configured model's actual input limits still matter.
 
@@ -149,4 +147,4 @@ Aliases such as `DEFAULT_TOP_K` and `engine.default_top_k` refer to `default_top
 
 **Source:** [settings.py](../graph_rag/cli/settings.py), [engine_options.py](../graph_rag/cli/engine_options.py), [config_commands.py](../graph_rag/cli/config_commands.py), [config.py](../graph_rag/config.py).
 
-[Previous](05-the-two-commands.md) | [Guide](README.md) | [Next: Architecture](07-architecture.md)
+[Previous: CLI commands and projects](06-cli-commands-and-projects.md) | [Guide](README.md) | [Next: Python compatibility](08-compatibility.md)

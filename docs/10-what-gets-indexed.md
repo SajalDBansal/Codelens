@@ -1,4 +1,4 @@
-# 08 - What gets indexed?
+# 10 - What gets indexed?
 
 The scanner decides which files can influence the graph, embeddings, and answers. Excluded files do not participate in the current hash tree. This avoids spending model requests on generated output, dependencies, binary assets, and obvious secret files.
 
@@ -69,4 +69,4 @@ print(classify("notes.custom"))      # (None, 'text')
 
 **Source:** [languages.py](../graph_rag/parsing/languages.py), [merkle.py](../graph_rag/change_detection/merkle.py), [test_exclusions.py](../tests/test_exclusions.py), [test_artifact_exclusion.py](../tests/test_artifact_exclusion.py).
 
-[Previous](07-architecture.md) | [Guide](README.md) | [Next: Code parsing](09-parsing-code.md)
+[Previous: Architecture](09-architecture.md) | [Guide](README.md) | [Next: Parsing code](11-parsing-code.md)

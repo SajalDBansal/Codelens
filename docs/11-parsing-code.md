@@ -1,4 +1,4 @@
-# 09 - How code becomes entities
+# 11 - How code becomes entities
 
 Parsing means reading source according to a language's syntax. Tree-sitter returns a syntax tree: a function definition contains a name, parameters, and a body; a class contains members; an import has its own syntax. CodeLens walks that tree to create its own simpler objects.
 
@@ -68,4 +68,4 @@ This does not call OpenAI or write a graph. It can initialize the language parse
 
 **Source:** [code_parser.py](../graph_rag/parsing/code_parser.py), [languages.py](../graph_rag/parsing/languages.py), [models.py](../graph_rag/models.py), [test_scope_and_ownership.py](../tests/test_scope_and_ownership.py).
 
-[Previous](08-what-gets-indexed.md) | [Guide](README.md) | [Next: Documents](10-parsing-documents.md)
+[Previous: What gets indexed](10-what-gets-indexed.md) | [Guide](README.md) | [Next: Parsing documents](12-parsing-documents.md)

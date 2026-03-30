@@ -1,4 +1,4 @@
-# 15 - The indexing pipeline, step by step
+# 18 - The indexing pipeline, step by step
 
 `codelens embed` means much more than "call an embedding model." It coordinates setup, project selection, parsing, graph writes, embeddings, relationship resolution, summaries, and completion metadata.
 
@@ -12,13 +12,13 @@ An ordinary update records `indexing`. A replacement records its pending path/pr
 
 | Order | Work | Main result |
 | --- | --- | --- |
-| 1 | Open LadybugDB and ensure compatible schema/model/root metadata. | A valid store for this project/profile. |
+| 1 | Open SQLite and ensure compatible schema/model/root metadata. | A valid store for this project/profile. |
 | 2 | Scan eligible files and construct today's hash tree. | File/folder hashes and code/document classifications. |
 | 3 | Compare with stored hashes. | Changed files, removed files, unchanged counts. |
 | 4 | If nothing changed, return early. | No parsing, new embeddings, or graph-shape recomputation. |
 | 5 | Delete missing files; create/update required folder/file nodes without success hashes. | Containers ready and affected completion hashes invalidated. |
 | 6 | Parse each changed file; record failures and keep processing other files. | Code entities or document chunks. |
-| 7 | Compare embedding fingerprints; delete vanished IDs; save refreshed properties/local links. | Pending embedding lists and unresolved references. |
+| 7 | Check parsed source bytes against the scan hash; save source snapshots, refreshed properties and local links; delete vanished IDs and compare embedding fingerprints. | Verified source references, pending embedding lists and unresolved references. |
 | 8 | Embed changed code, then document chunks, and save their vectors. | Searchable text with matching vector fingerprints. |
 | 9 | Refresh file imports and resolve cross-file names, owners, types, and document mentions. | Additional graph relationships and remaining unresolved/external state. |
 | 10 | Save shared interface references and prune noisy/orphan tokens. | Bounded discovery links across files/languages. |
@@ -51,7 +51,7 @@ A graph with several components may be legitimate. Zero call edges can also be l
 
 Credential/profile/root errors stop early. File parse errors are accumulated while other files are attempted. Essential embedding failures interrupt the run. Optional summary generation can return no summary; embedding a summary that was generated is a separate operation and can still fail.
 
-Individual database writes can already be committed before a later error. Completion-hash invalidation and project status make retries possible, but there is no durable queue or per-API-batch job checkpoint. See [change detection and recovery](14-change-detection.md).
+Individual database writes can already be committed before a later error. Completion-hash invalidation and project status make retries possible, but there is no durable queue or per-API-batch job checkpoint. See [change detection and recovery](17-change-detection.md).
 
 ## What progress is available today?
 
@@ -59,4 +59,4 @@ The pipeline prints stage messages and counters, including embedding categories 
 
 **Source:** [workflow.py](../graph_rag/cli/workflow.py), [index_command.py](../graph_rag/cli/index_command.py), [indexer.py](../graph_rag/pipeline/indexer.py), [summarizer.py](../graph_rag/pipeline/summarizer.py).
 
-[Previous](14-change-detection.md) | [Guide](README.md) | [Next: Retrieval](16-retrieval.md)
+[Previous: Change detection](17-change-detection.md) | [Guide](README.md) | [Next: Retrieval](19-retrieval.md)

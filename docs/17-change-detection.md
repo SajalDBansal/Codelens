@@ -1,4 +1,4 @@
-# 14 - Change detection and recovery
+# 17 - Change detection and recovery
 
 CodeLens should not regenerate every vector after a small edit. It uses file/folder hashes to locate changed content and embedding-input fingerprints to decide which parsed blocks need new vectors.
 
@@ -54,7 +54,7 @@ If a model replacement failed, repeat the rebuild with the same configured model
 codelens embed --project demo --on-model-change rebuild
 ```
 
-`--no-update` does not allow querying an ordinary update marked failed/indexing. A root location mismatch is not repaired by rewriting a manifest blindly. Follow the [troubleshooting guide](19-troubleshooting.md) and preserve the original graph if unsure.
+`--no-update` does not allow querying an ordinary update marked failed/indexing. A root location mismatch is not repaired by rewriting a manifest blindly. Follow the [troubleshooting guide](23-troubleshooting.md) and preserve the original graph if unsure.
 
 ## Summary and interface cleanup
 
@@ -64,4 +64,4 @@ Optional summary generation can fail without failing the entire index. An unchan
 
 **Source:** [merkle.py](../graph_rag/change_detection/merkle.py), [indexer.py](../graph_rag/pipeline/indexer.py), [workflow.py](../graph_rag/cli/workflow.py), [test_indexing_recovery.py](../tests/test_indexing_recovery.py), [test_force_deletions.py](../tests/test_force_deletions.py).
 
-[Previous](13-embeddings.md) | [Guide](README.md) | [Next: Indexing order](15-the-indexing-pipeline.md)
+[Previous: Embeddings](16-embeddings.md) | [Guide](README.md) | [Next: Indexing pipeline](18-the-indexing-pipeline.md)

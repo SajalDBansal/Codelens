@@ -20,7 +20,7 @@ Setup saves the API key and preferences. Embedding registers the project, create
 | Local repository input | Read an existing folder. Clone/download repositories yourself. |
 | Code parsing | Extract entities using supported Tree-sitter grammars and language rules. |
 | Document indexing | Chunk documentation/configuration and other accepted text. |
-| Graph storage | Embedded LadybugDB file per project; no database server. |
+| Graph storage | Embedded SQLite file per project; no database server. |
 | Search | Exact vector similarity plus Python BM25 keyword search. |
 | Relationships | Structural, call, type, import, mention, and shared-interface links. |
 | Incremental updates | File/folder hashes and exact embedding-input fingerprints avoid unnecessary work. |
@@ -52,4 +52,4 @@ A low-relevance question may stop before answer generation, but its query embedd
 
 **Source:** [app.py](../graph_rag/cli/app.py), [workflow.py](../graph_rag/cli/workflow.py), [pyproject.toml](../pyproject.toml).
 
-[Previous](02-why-graph-rag-for-code.md) | [Guide](README.md) | [Next: Setup](04-setup-and-first-run.md)
+[Previous: Why Graph RAG for code?](02-why-graph-rag-for-code.md) | [Guide](README.md) | [Next: Install, upgrade, and uninstall](04-install-upgrade-uninstall.md)

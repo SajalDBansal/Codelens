@@ -1,23 +1,37 @@
-# 19 - Troubleshooting by stage
+# 23 - Troubleshooting by stage
 
 Start with `codelens doctor`, `codelens projects list`, and `codelens status --project NAME`. These inspect local state without making model requests. A problem at installation, scanning, parsing, retrieval, or generation needs a different fix.
 
 ## The command cannot be found
 
-Use the environment where CodeLens was installed. In the package directory on PowerShell:
+For the recommended uv installation, run:
+
+```sh
+uv tool update-shell
+```
+
+Close and reopen your terminal. Restart VS Code or Windows Terminal if new tabs
+still use the old command path. `uv tool list` shows installed tools; if CodeLens
+is missing, follow the [installation guide](04-install-upgrade-uninstall.md).
+
+For a pip installation, use its environment. In the CodeLens source folder on PowerShell:
 
 ```powershell
 .\.venv\Scripts\codelens.exe --help
 .\.venv\Scripts\python.exe -m graph_rag --help
 ```
 
-In Git Bash, activate `.venv/Scripts/activate` or quote an absolute alias path:
+In Linux/macOS shells, activate the environment or invoke its `bin/codelens`
+directly. Git Bash on Windows uses `Scripts/codelens.exe`. Quote paths containing
+spaces. For an old development distribution with conflicting command names, see
+the [upgrade instructions](04-install-upgrade-uninstall.md#upgrade).
 
-```bash
-alias codelens='"/c/Code Projects/codelens/.venv/Scripts/codelens.exe"'
-```
+## Python 3.15 installation asks for a compiler
 
-Replace the example path. Backslashes and unquoted spaces can be interpreted by Bash. If an old `graph-rag-reviewer` distribution remains in the same environment, follow the rename/reinstall instructions in [setup](04-setup-and-first-run.md).
+The parser dependency currently builds from source on Python 3.15. On Windows,
+install Microsoft C++ Build Tools with an x64 compiler and Windows SDK, or use
+the recommended Python 3.14 installation. On Linux, a C compiler is required.
+See the [tested requirements](08-compatibility.md#python-315-installation-requirements).
 
 ## Configuration or credential failure
 
@@ -54,11 +68,11 @@ Read the per-file failure messages, correct the source/parser/dependency problem
 
 For a failed replacement, repeat the rebuild with the same target profile to resume its pending path. Retried model work can include batches whose responses were not saved before the interruption.
 
-## Native database errors or file-in-use errors
+## Index errors or file-in-use errors
 
-Close other CLI processes using the same project and close direct `GraphStore` connections. The CLI uses file locks and Ladybug uses native storage; a lock conflict is not a reason to run two writers anyway.
+Close other CLI processes using the same project and close direct `GraphStore` connections. The CLI uses file locks and SQLite transactions; a lock conflict is not a reason to run two writers anyway.
 
-If a Python native-crash dialog reappears, record the exact command, Python/OS versions, installed Ladybug version, and whether the offline smoke script fails on a new disposable path. The current implementation uses Ladybug core search and Python keyword search, without loading downloadable native search extensions. Do not delete the real graph to diagnose a crash. Run `python -m pip check` and compare with the pinned dependency setup before changing versions.
+For missing or corrupt vector segments, restore the SQLite file and its matching `.vectors` directory together, or build a replacement index. Do not delete the original index while diagnosing failures. A file rejected as "not a SQLite index" must be replaced with a valid backup or a fresh index at a new path. See [storage and maintenance](14-local-storage-and-maintenance.md).
 
 ## Retrieval misses something that exists
 
@@ -79,8 +93,8 @@ Compare the selected source with the response. A model can misunderstand orderin
 
 Large accepted text, forced embeddings, repeated failed batches, and regenerated summaries can increase usage. An unchanged embed can avoid model work; a question still requests an embedding. There is no guarantee of free retrieval.
 
-A changed answer model does not rewrite existing summaries. Optional summary failures can leave an overview absent until a later eligible/forced update. `projects remove` unregisters only; `--force` reprocesses content rather than deleting every database generation. There is no reset/prune command, and no database-server deletion command is needed.
+A changed answer model does not rewrite existing summaries. Optional summary failures can leave an overview absent until a later eligible/forced update. `projects remove` unregisters only; `--force` reprocesses content rather than deleting every database generation. `codelens compact` reclaims obsolete segments and snapshots in the active generation. It does not delete old graph generations or reset the project.
 
-**Source:** [workflow.py](../graph_rag/cli/workflow.py), [state.py](../graph_rag/cli/state.py), [projects.py](../graph_rag/cli/projects.py), [local_connection.py](../graph_rag/storage/local_connection.py).
+**Source:** [workflow.py](../graph_rag/cli/workflow.py), [state.py](../graph_rag/cli/state.py), [projects.py](../graph_rag/cli/projects.py), [sqlite_store.py](../graph_rag/storage/sqlite_store.py).
 
-[Previous](18-testing.md) | [Guide](README.md) | [Next: Limits](20-limitations.md)
+[Previous: Performance measurement](22-storage-benchmark.md) | [Guide](README.md) | [Next: Current limitations](24-limitations.md)

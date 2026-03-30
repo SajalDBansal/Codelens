@@ -1,6 +1,6 @@
-# 22 - Follow one project from files to an answer
+# 26 - Follow one project from files to an answer
 
-This walkthrough uses the real [checkout demo](../examples/smoke_repo). Read its three files alongside this chapter. The model-backed commands below can incur OpenAI usage; [the offline smoke test](18-testing.md) checks the same local mechanics with controlled vectors instead.
+This walkthrough uses the real [checkout demo](../examples/smoke_repo). Read its three files alongside this chapter. The model-backed commands below can incur OpenAI usage; [the offline smoke test](21-testing.md) checks the same local mechanics with controlled vectors instead.
 
 ## 1. Understand the source before asking AI
 
@@ -93,7 +93,7 @@ codelens config show reasoning_model
 
 Status shows the active database, stored profile, counts, and timestamps. Its source freshness is the last completed index, not a new scan performed by status itself.
 
-Changing the reasoning model affects future generated text. Changing the embedding model/dimensions requires keeping the old profile or building a separate replacement. The [recovery chapter](14-change-detection.md) explains what happens if that replacement fails.
+Changing the reasoning model affects future generated text. Changing the embedding model/dimensions requires keeping the old profile or building a separate replacement. The [recovery chapter](17-change-detection.md) explains what happens if that replacement fails.
 
 ## 9. Evaluate retrieval against matching expectations
 
@@ -105,4 +105,4 @@ This checks whether expected checkout/pricing entities appear in the stored snap
 
 **Source:** [checkout.py](../examples/smoke_repo/checkout.py), [pricing.py](../examples/smoke_repo/pricing.py), [demo README](../examples/smoke_repo/README.md), [smoke script](../scripts/smoke_local.py).
 
-[Previous](21-glossary.md) | [Guide](README.md) | [Next: Contributing](23-contributor-guide.md)
+[Previous: Glossary](25-glossary.md) | [Guide](README.md) | [Next: Contributor guide](27-contributor-guide.md)
