@@ -63,6 +63,10 @@ outside the checkout to exercise the installed package. The workflow also runs
 monthly to detect upstream dependency changes. Local checks do not establish that
 the GitHub workflow has passed; review its results before publishing.
 
+Each CI job creates a fresh virtual environment so preinstalled runner tools do
+not affect dependency checks. Tests explicitly disable Typer's forced terminal
+formatting so captured help output stays plain text in GitHub Actions.
+
 ## Dependencies and reproducibility
 
 | Dependency | Versions used in local validation |
