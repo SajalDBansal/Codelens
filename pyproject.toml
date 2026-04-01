@@ -16,7 +16,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codelens-rag"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local Graph RAG for codebases: index code, retrieve evidence, and ask questions with OpenAI"
 readme = {file = "README.md", content-type = "text/markdown"}
 # Native parser wheel availability is documented in docs/08-compatibility.md.

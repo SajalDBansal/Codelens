@@ -42,4 +42,4 @@ imports `storage`, and `storage` never imports `pipeline`. This is why you
 can read any single folder without having read the rest of the project.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
